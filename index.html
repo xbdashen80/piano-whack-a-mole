@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>钢琴打地鼠 · 小熊滑板</title>
+<link rel="stylesheet" href="./styles.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+<div id="top">
+  <span class="stat">得分<b id="score">0</b></span>
+  <span class="stat combo">连击<b id="combo">0</b></span>
+  <span class="stat best">最高分<b id="best">0</b></span>
+  <span id="stage">关卡 <b id="lvlName">1</b></span>
+</div>
+<div id="ctrl">
+  <button id="bgmBtn" class="on">🥁 鼓点</button>
+  <button id="sfxBtn" class="on">🔊 音效</button>
+  <button id="pauseBtn" class="hidden">暂停</button>
+  <span id="status">检测钢琴中…</span>
+</div>
+<div id="goalWrap" class="hidden">
+  <div id="goalLabel">距离过关还差 <b id="goalRemain">0</b> 分</div>
+  <div id="goalBarBg"><div id="goalBar"></div></div>
+</div>
+<div id="toast"></div>
+<div id="overlay">
+  <h1>🎹 小熊滑板 · 钢琴打地鼠</h1>
+  <p>键上方冒目标圈，用标的手指在倒计时缩没前按对它。<br>
+     左边<b style="color:#FFC371">小熊踩着滑板浮在水面上</b>。<br>
+     你<b style="color:#5DCAA5">每按对一下，滑板就往上弹一下</b>，小熊安全；<br>
+     手一停就慢慢下沉，越靠近水面小熊越害怕，掉进水里 = 失败。<br>
+     把小熊托住，同时把上方进度条打满 = <b style="color:#5DCAA5">通关</b>。</p>
+  <div class="fingerLegend">
+    <span><i class="fdot" style="background:#FF9D9D">1</i>拇指</span>
+    <span><i class="fdot" style="background:#FFC371">2</i>食指</span>
+    <span><i class="fdot" style="background:#9DE5B5">3</i>中指</span>
+    <span><i class="fdot" style="background:#9DB4FF">4</i>无名指</span>
+    <span><i class="fdot" style="background:#D9A0FF">5</i>小指</span>
+  </div>
+  <p id="ovStatus" style="color:#FFC371;">连上 USB 线、Chrome 打开并允许 MIDI。没插琴可用键盘 A~L 试。（首次点开始请允许播放声音）</p>
+  <div style="font-size:13px;color:rgba(255,255,255,0.6);">这一关用到的琴键（和你真琴位置对应）：</div>
+  <div id="kbPreview" style="display:flex;gap:4px;justify-content:center;margin:2px 0;"></div>
+  <div style="font-size:13px;color:rgba(255,255,255,0.5);">选关卡（从第1关开始）：</div>
+  <div id="lvlGrid"></div>
+  <button id="bigPlay">开始第 1 关</button>
+</div>
+
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>
