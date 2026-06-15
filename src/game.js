@@ -111,9 +111,20 @@ function pauseToggle() {
   if (!game.paused) { game.nextSpawn = performance.now() + 600; game.lastTickTime = 0; }
 }
 
+// 覆盖层显示时（游戏未进行），连敲两下同一个琴键 = 触发主操作（开始/下一关/重来），
+// 让玩家手不用离开电钢琴。双击避免刚过关那一下顺手误触。
+let lastAdvKey = null, lastAdvTime = 0;
+function pressForAdvance(midi) {
+  if (game.running || game.breaking) { lastAdvKey = null; return; }
+  const now = performance.now();
+  if (midi === lastAdvKey && now - lastAdvTime < 600) { lastAdvKey = null; ui.triggerPrimary(); }
+  else { lastAdvKey = midi; lastAdvTime = now; }
+}
+
 // 注册事件监听（输入/UI/物理 通过事件总线回流到这里）
 export function initGame() {
   on('press', (midi, vel) => press(midi, vel));
+  on('press', midi => pressForAdvance(midi));
   on('start', i => startGame(i));
   on('pauseToggle', pauseToggle);
   on('gameOver', gameOver);
