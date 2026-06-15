@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>钢琴打地鼠 · 小熊滑板</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box;}
+  html,body{height:100%;overflow:hidden;background:#0a0a14;
+    font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;color:#fff;}
+  canvas{position:absolute;inset:0;width:100%;height:100%;}
+  #top{position:fixed;top:0;left:0;width:100%;z-index:20;display:flex;align-items:center;gap:18px;padding:12px 18px;flex-wrap:wrap;}
+  .stat{font-size:12px;color:rgba(255,255,255,0.45);}
+  .stat b{display:block;color:#fff;font-size:24px;font-weight:600;line-height:1.1;}
+  .stat.combo b{color:#FFC371;}.stat.best b{color:#5DCAA5;}
+  #stage{font-size:13px;color:rgba(255,255,255,0.5);}#stage b{color:#9DB4FF;}
+  #ctrl{position:fixed;top:12px;right:16px;z-index:21;display:flex;gap:8px;align-items:center;}
+  select,button{font-family:inherit;font-size:13px;color:#fff;cursor:pointer;background:rgba(255,255,255,0.08);
+    border:1px solid rgba(255,255,255,0.15);border-radius:8px;padding:6px 12px;}
+  button:hover,select:hover{background:rgba(255,255,255,0.15);}
+  button.on{background:rgba(80,160,120,0.3);border-color:rgba(80,200,140,0.5);}
+  #status{font-size:12px;padding:5px 12px;border-radius:999px;background:rgba(240,160,40,0.18);border:1px solid rgba(240,160,40,0.4);white-space:nowrap;}
+  #status.ok{background:rgba(40,200,120,0.18);border-color:rgba(40,200,120,0.4);}
+  #goalWrap{position:fixed;top:62px;left:50%;transform:translateX(-50%);z-index:20;width:min(520px,80%);text-align:center;}
+  #goalLabel{font-size:13px;color:rgba(255,255,255,0.7);margin-bottom:5px;}#goalLabel b{color:#FFC371;}
+  #goalBarBg{height:14px;background:rgba(255,255,255,0.1);border-radius:999px;overflow:hidden;border:1px solid rgba(255,255,255,0.15);}
+  #goalBar{height:100%;width:0;border-radius:999px;background:linear-gradient(90deg,#7F77DD,#5DCAA5,#FFC371);transition:width .25s;}
+  #toast{position:fixed;top:30%;left:50%;transform:translateX(-50%);z-index:16;font-size:30px;font-weight:700;opacity:0;pointer-events:none;text-shadow:0 0 30px currentColor;white-space:nowrap;}
+  #toast.show{animation:tp 1.2s ease-out;}
+  @keyframes tp{0%{opacity:0;transform:translate(-50%,12px) scale(.7)}18%{opacity:1;transform:translate(-50%,0) scale(1.1)}80%{opacity:1}100%{opacity:0;transform:translate(-50%,-24px)}}
+  #overlay{position:fixed;inset:0;z-index:30;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:rgba(10,10,20,0.94);text-align:center;padding:24px;overflow:auto;}
+  #overlay h1{font-size:32px;font-weight:700;}
+  #overlay p{color:rgba(255,255,255,0.65);font-size:15px;max-width:520px;line-height:1.8;}
+  #bigPlay{background:rgba(80,120,255,0.92);border:none;font-size:18px;padding:14px 44px;font-weight:600;border-radius:10px;}
+  #bigPlay:hover{background:rgba(80,120,255,1);}
+  #resultStats{display:flex;gap:34px;margin:8px 0;}#resultStats div{text-align:center;}
+  #resultStats b{font-size:34px;font-weight:700;display:block;}
+  .unlockMsg{color:#FFC371;font-size:16px;}
+  .fingerLegend{display:flex;gap:14px;justify-content:center;flex-wrap:wrap;margin:4px 0;font-size:13px;color:rgba(255,255,255,0.7);}
+  .fingerLegend span{display:inline-flex;align-items:center;gap:5px;}
+  .fdot{width:20px;height:20px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;color:#1a1a22;}
+  #lvlGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px;width:min(640px,90%);max-height:34vh;overflow:auto;padding:4px;}
+  #lvlGrid button{font-size:12px;padding:8px 6px;text-align:center;}
+  .hidden{display:none!important;}
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+<div id="top">
+  <span class="stat">得分<b id="score">0</b></span>
+  <span class="stat combo">连击<b id="combo">0</b></span>
+  <span class="stat best">最高分<b id="best">0</b></span>
+  <span id="stage">关卡 <b id="lvlName">1</b></span>
+</div>
+<div id="ctrl">
+  <button id="bgmBtn" class="on">🥁 鼓点</button>
+  <button id="sfxBtn" class="on">🔊 音效</button>
+  <button id="pauseBtn" class="hidden">暂停</button>
+  <span id="status">检测钢琴中…</span>
+</div>
+<div id="goalWrap" class="hidden">
+  <div id="goalLabel">距离过关还差 <b id="goalRemain">0</b> 分</div>
+  <div id="goalBarBg"><div id="goalBar"></div></div>
+</div>
+<div id="toast"></div>
+<div id="overlay">
+  <h1>🎹 小熊滑板 · 钢琴打地鼠</h1>
+  <p>键上方冒目标圈，用标的手指在倒计时缩没前按对它。<br>
+     左边<b style="color:#FFC371">小熊踩着滑板浮在水面上</b>。<br>
+     你<b style="color:#5DCAA5">每按对一下，滑板就往上弹一下</b>，小熊安全；<br>
+     手一停就慢慢下沉，越靠近水面小熊越害怕，掉进水里 = 失败。<br>
+     把小熊托住，同时把上方进度条打满 = <b style="color:#5DCAA5">通关</b>。</p>
+  <div class="fingerLegend">
+    <span><i class="fdot" style="background:#FF9D9D">1</i>拇指</span>
+    <span><i class="fdot" style="background:#FFC371">2</i>食指</span>
+    <span><i class="fdot" style="background:#9DE5B5">3</i>中指</span>
+    <span><i class="fdot" style="background:#9DB4FF">4</i>无名指</span>
+    <span><i class="fdot" style="background:#D9A0FF">5</i>小指</span>
+  </div>
+  <p id="ovStatus" style="color:#FFC371;">连上 USB 线、Chrome 打开并允许 MIDI。没插琴可用键盘 A~L 试。（首次点开始请允许播放声音）</p>
+  <div style="font-size:13px;color:rgba(255,255,255,0.6);">这一关用到的琴键（和你真琴位置对应）：</div>
+  <div id="kbPreview" style="display:flex;gap:4px;justify-content:center;margin:2px 0;"></div>
+  <div style="font-size:13px;color:rgba(255,255,255,0.5);">选关卡（从第1关开始）：</div>
+  <div id="lvlGrid"></div>
+  <button id="bigPlay">开始第 1 关</button>
+</div>
+
+<script>
+const canvas=document.getElementById('canvas'),ctx=canvas.getContext('2d');
+let W,H;const $=id=>document.getElementById(id);
+function resize(){W=canvas.width=innerWidth;H=canvas.height=innerHeight;layoutKeys();}
+window.addEventListener('resize',resize);
+
+const SAVE='piano_bear_v1';
+function load(){try{return JSON.parse(localStorage.getItem(SAVE))||{}}catch(e){return{}}}
+function persist(){try{localStorage.setItem(SAVE,JSON.stringify(prog))}catch(e){}}
+let prog=load();prog.best=prog.best||0;prog.unlocked=prog.unlocked||1;
+
+const WHITE=[60,62,64,65,67,69,71,72,74,76,77,79];
+// music: 0=轻松 1=明快 2=有劲 3=紧张 4=激烈 (背景音乐档位,随关卡递进)
+const LEVELS=[
+  // 3键 (6小台阶)
+  {keys:3,spawn:[1400,1800],ttl:3200,maxActive:1,goal:160,sink:0.016,bounce:0.17,music:0,t:'3键 启程'},
+  {keys:3,spawn:[1250,1650],ttl:3000,maxActive:1,goal:200,sink:0.018,bounce:0.16,music:0,t:'3键 入门'},
+  {keys:3,spawn:[1100,1450],ttl:2750,maxActive:1,goal:240,sink:0.021,bounce:0.16,music:0,t:'3键 适应'},
+  {keys:3,spawn:[950,1250], ttl:2500,maxActive:1,goal:290,sink:0.024,bounce:0.15,music:0,t:'3键 熟练'},
+  {keys:3,spawn:[820,1100], ttl:2250,maxActive:1,goal:340,sink:0.027,bounce:0.15,music:1,t:'3键 加速'},
+  {keys:3,spawn:[700,1000], ttl:2000,maxActive:2,goal:400,sink:0.030,bounce:0.15,music:1,t:'3键 双发'},
+  // 4键 (5)
+  {keys:4,spawn:[1150,1500],ttl:2800,maxActive:1,goal:330,sink:0.022,bounce:0.16,music:1,t:'4键 启程'},
+  {keys:4,spawn:[1000,1350],ttl:2600,maxActive:1,goal:390,sink:0.025,bounce:0.15,music:1,t:'4键 入门'},
+  {keys:4,spawn:[860,1180], ttl:2350,maxActive:1,goal:450,sink:0.028,bounce:0.15,music:1,t:'4键 熟练'},
+  {keys:4,spawn:[740,1020], ttl:2100,maxActive:2,goal:520,sink:0.031,bounce:0.14,music:2,t:'4键 加速'},
+  {keys:4,spawn:[640,900],  ttl:1900,maxActive:2,goal:600,sink:0.034,bounce:0.14,music:2,t:'4键 双发'},
+  // 5键 (5)
+  {keys:5,spawn:[1050,1400],ttl:2700,maxActive:1,goal:480,sink:0.025,bounce:0.15,music:2,t:'5键 启程'},
+  {keys:5,spawn:[900,1250], ttl:2450,maxActive:1,goal:550,sink:0.028,bounce:0.14,music:2,t:'5键 入门'},
+  {keys:5,spawn:[780,1080], ttl:2200,maxActive:2,goal:640,sink:0.031,bounce:0.14,music:2,t:'5键 熟练'},
+  {keys:5,spawn:[680,950],  ttl:2000,maxActive:2,goal:730,sink:0.034,bounce:0.13,music:2,t:'5键 加速'},
+  {keys:5,spawn:[590,830],  ttl:1800,maxActive:2,goal:830,sink:0.037,bounce:0.13,music:3,t:'5键 高速'},
+  // 6键 (4)
+  {keys:6,spawn:[900,1250], ttl:2400,maxActive:2,goal:660,sink:0.030,bounce:0.14,music:3,t:'6键 入门'},
+  {keys:6,spawn:[780,1080], ttl:2150,maxActive:2,goal:760,sink:0.033,bounce:0.13,music:3,t:'6键 熟练'},
+  {keys:6,spawn:[680,940],  ttl:1900,maxActive:2,goal:870,sink:0.037,bounce:0.13,music:3,t:'6键 加速'},
+  {keys:6,spawn:[590,820],  ttl:1700,maxActive:3,goal:1000,sink:0.040,bounce:0.12,music:3,t:'6键 高速'},
+  // 7键 (4)
+  {keys:7,spawn:[820,1120], ttl:2150,maxActive:2,goal:840,sink:0.034,bounce:0.13,music:3,t:'7键 入门'},
+  {keys:7,spawn:[720,1000], ttl:1950,maxActive:2,goal:960,sink:0.037,bounce:0.12,music:3,t:'7键 熟练'},
+  {keys:7,spawn:[620,860],  ttl:1750,maxActive:3,goal:1100,sink:0.040,bounce:0.12,music:4,t:'7键 加速'},
+  {keys:7,spawn:[540,760],  ttl:1600,maxActive:3,goal:1250,sink:0.044,bounce:0.11,music:4,t:'7键 高速'},
+  // 8键 (3)
+  {keys:8,spawn:[680,940],  ttl:1850,maxActive:2,goal:1080,sink:0.038,bounce:0.12,music:4,t:'8键 入门'},
+  {keys:8,spawn:[580,820],  ttl:1650,maxActive:3,goal:1240,sink:0.042,bounce:0.11,music:4,t:'8键 加速'},
+  {keys:8,spawn:[510,720],  ttl:1500,maxActive:3,goal:1420,sink:0.046,bounce:0.11,music:4,t:'8键 高速'},
+  // 10键 (2)
+  {keys:10,spawn:[540,780], ttl:1550,maxActive:3,goal:1350,sink:0.046,bounce:0.11,music:4,t:'10键 挑战'},
+  {keys:10,spawn:[450,660], ttl:1380,maxActive:3,goal:1600,sink:0.052,bounce:0.10,music:4,t:'10键 高速'},
+  // 12键 疯狂 (1)
+  {keys:12,spawn:[370,580], ttl:1180,maxActive:4,goal:1900,sink:0.060,bounce:0.10,music:4,t:'12键 疯狂'},
+];
+let curLevel=0;
+const NM=['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+function midiName(m){return NM[m%12];}
+const FINGER_COLORS={1:'#FF9D9D',2:'#FFC371',3:'#9DE5B5',4:'#9DB4FF',5:'#D9A0FF'};
+function fingerFor(idx){return (idx%5)+1;}
+let keys=[],keyTop=0,keyH=0,activeKeyMidis=[];
+function layoutKeys(){keys=[];const n=LEVELS[curLevel].keys;activeKeyMidis=WHITE.slice(0,n);
+  keyH=Math.min(230,H*0.34);keyTop=H-keyH;const ww=W/n;
+  activeKeyMidis.forEach((m,i)=>keys.push({midi:m,x:i*ww,w:ww,cx:i*ww+ww/2,finger:fingerFor(i)}));}
+function keyFor(m){return keys.find(k=>k.midi===m);}
+
+let running=false,paused=false,score=0,combo=0,moles=[],nextSpawn=0,lastTickTime=0,lastMoleTime=0;
+// 小熊: pos 0(高,安全)→1(沉入水). vel速度. hop跳跃动画. flash高亮. legKick滑板踢动
+let bear={pos:0.2,vel:0,hop:0,flash:0};
+const particles=[],ripples=[],splashes=[];
+const palettes=[['#FF6B9D','#FFC371'],['#5DCAA5','#3CE0C0'],['#7F77DD','#B5A0FF'],
+  ['#378ADD','#6BC0FF'],['#EF9F27','#FFD166'],['#E24B4A','#FF8585'],['#1D9E75','#5DE0B0']];
+function colFor(m){const i=activeKeyMidis.indexOf(m);return palettes[(i<0?0:i)%palettes.length];}
+
+let waterPhase=0;
+
+// ================= Tone.js =================
+let audioReady=false,bgmOn=true,sfxOn=true;
+let hitSynth,hitSynth2,arpSynth,loseSynth,reverb,sfxBus,bgmBus,kick,snare,hat,bass,lead,drumLoop;
+let beatPulse=0;
+async function initAudio(){if(audioReady)return;await Tone.start();Tone.Transport.bpm.value=96;
+  reverb=new Tone.Reverb({decay:1.6,wet:0.22}).toDestination();
+  sfxBus=new Tone.Gain(0.9).connect(reverb);sfxBus.connect(Tone.getDestination());
+  hitSynth=new Tone.Synth({oscillator:{type:'square'},envelope:{attack:0.001,decay:0.12,sustain:0,release:0.08}}).connect(sfxBus);hitSynth.volume.value=-6;
+  hitSynth2=new Tone.Synth({oscillator:{type:'sawtooth'},envelope:{attack:0.001,decay:0.1,sustain:0,release:0.06}}).connect(sfxBus);hitSynth2.volume.value=-12;
+  arpSynth=new Tone.Synth({oscillator:{type:'square'},envelope:{attack:0.001,decay:0.1,sustain:0.05,release:0.1}}).connect(sfxBus);arpSynth.volume.value=-7;
+  loseSynth=new Tone.Synth({oscillator:{type:'sawtooth'},envelope:{attack:0.002,decay:0.25,sustain:0,release:0.1}}).connect(sfxBus);loseSynth.volume.value=-8;
+  bgmBus=new Tone.Gain(0.7).toDestination();
+  kick=new Tone.MembraneSynth({pitchDecay:0.03,octaves:6,envelope:{attack:0.001,decay:0.32,sustain:0}}).connect(bgmBus);kick.volume.value=-3;
+  snare=new Tone.NoiseSynth({noise:{type:'white'},envelope:{attack:0.001,decay:0.16,sustain:0}}).connect(bgmBus);snare.volume.value=-12;
+  hat=new Tone.NoiseSynth({noise:{type:'white'},envelope:{attack:0.001,decay:0.04,sustain:0}}).connect(bgmBus);hat.volume.value=-20;
+  bass=new Tone.Synth({oscillator:{type:'triangle'},envelope:{attack:0.02,decay:0.2,sustain:0.4,release:0.2}}).connect(bgmBus);bass.volume.value=-10;
+  lead=new Tone.Synth({oscillator:{type:'square'},envelope:{attack:0.01,decay:0.1,sustain:0.1,release:0.1}}).connect(bgmBus);lead.volume.value=-13;
+  let step=0;
+  drumLoop=new Tone.Loop((time)=>{const s=step%16;const M=MUSIC[musicTier];
+    if(M.kick[s]){kick.triggerAttackRelease('C1','8n',time);Tone.Draw.schedule(()=>{beatPulse=1;},time);}
+    if(M.snare[s])snare.triggerAttackRelease('16n',time);
+    if(M.hat[s])hat.triggerAttackRelease('32n',time,M.tier>=3?0.8:0.5);
+    if(M.bass&&M.bass[s])bass.triggerAttackRelease(M.bass[s],'8n',time);
+    if(M.lead&&M.lead[s])lead.triggerAttackRelease(M.lead[s],'16n',time);
+    step++;},'16n');
+  audioReady=true;}
+
+// 5档递进背景乐:每档都是完整、够嗨的律动,靠风格/旋律不同来递进,不是靠放慢
+const MUSIC=[
+  { // 0 欢快流行:轻松但有完整节奏和旋律
+    tier:0,bpm:118,
+    kick:[1,0,0,0,0,0,1,0,1,0,0,0,0,0,0,0],
+    snare:[0,0,0,0,1,0,0,0,0,0,0,0,1,0,0,0],
+    hat:[1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0],
+    bass:['C2',null,'C2',null,'A1',null,'A1',null,'F1',null,'F1',null,'G1',null,'G1',null],
+    lead:['E4',null,'G4',null,'C5',null,'G4',null,'A4',null,'F4',null,'G4',null,'D4',null]},
+  { // 1 律动放克:加切分,更弹
+    tier:1,bpm:124,
+    kick:[1,0,0,1,0,0,1,0,0,0,1,0,0,1,0,0],
+    snare:[0,0,0,0,1,0,0,0,0,0,0,0,1,0,0,0],
+    hat:[1,0,1,1,1,0,1,0,1,0,1,1,1,0,1,0],
+    bass:['C2',null,'G1','C2','A1',null,'E1','A1','F1',null,'C1','F1','G1',null,'D1','G1'],
+    lead:['C5',null,null,'E5','G4',null,null,'C5','F4',null,null,'A4','G4',null,null,'B4']},
+  { // 2 电子舞曲:四踩底鼓,有劲
+    tier:2,bpm:128,
+    kick:[1,0,0,0,1,0,0,0,1,0,0,0,1,0,0,0],
+    snare:[0,0,0,0,1,0,0,0,0,0,0,0,1,0,0,0],
+    hat:[0,0,1,0,0,0,1,0,0,0,1,0,0,0,1,0],
+    bass:['C2','C2',null,'C2','A1','A1',null,'A1','F1','F1',null,'F1','G1','G1',null,'G1'],
+    lead:['C5','E5','G5','E5','A4','C5','E5','C5','F4','A4','C5','A4','G4','B4','D5','B4']},
+  { // 3 紧张快板:密鼓,推进感强
+    tier:3,bpm:138,
+    kick:[1,0,0,1,0,0,1,0,1,0,0,1,0,0,1,0],
+    snare:[0,0,0,0,1,0,0,0,0,0,0,0,1,0,0,1],
+    hat:[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+    bass:['C2','C2','C2','C2','A1','A1','A1','A1','F1','F1','F1','F1','G1','G1','G1','G1'],
+    lead:['C5',null,'D5','E5','G5',null,'E5','C5','A4',null,'F4','A4','G4',null,'B4','D5']},
+  { // 4 激烈终章:最快,炸裂全开
+    tier:4,bpm:150,
+    kick:[1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0],
+    snare:[0,0,0,0,1,0,0,1,0,0,0,0,1,0,1,1],
+    hat:[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+    bass:['C2','C2','G1','C2','A1','A1','E1','A1','F1','F1','C1','F1','G1','G1','D1','G1'],
+    lead:['C5','E5','G5','C6','B5','G5','E5','C5','A5','F5','D5','A4','G5','D5','B4','G4']}
+];
+let musicTier=0;
+function setMusicTier(t){
+  musicTier=Math.max(0,Math.min(MUSIC.length-1,t));
+  if(audioReady)Tone.Transport.bpm.rampTo(MUSIC[musicTier].bpm,0.6);}
+function startBgm(){if(!audioReady)return;
+  Tone.Transport.bpm.value=MUSIC[musicTier].bpm;Tone.Transport.start();
+  if(bgmOn&&drumLoop.state!=='started')drumLoop.start(0);bgmBus.gain.rampTo(bgmOn?0.7:0,0.4);}
+function sfxHit(midi,perfect,comboN){if(!sfxOn||!audioReady)return;
+  const base=Tone.Frequency(midi,'midi').toFrequency();const pitch=base*(1+Math.min(comboN,12)*0.06);
+  const t=Tone.now();hitSynth.triggerAttackRelease(pitch,'16n',t,perfect?1:0.8);hitSynth2.triggerAttackRelease(pitch*2,'32n',t,0.6);}
+function sfxCombo(){if(!sfxOn||!audioReady)return;const t=Tone.now();['C5','E5','G5','C6'].forEach((n,i)=>arpSynth.triggerAttackRelease(n,'16n',t+i*0.05));}
+function sfxLevel(){if(!sfxOn||!audioReady)return;const t=Tone.now();['C5','D5','E5','G5','C6','E6'].forEach((n,i)=>arpSynth.triggerAttackRelease(n,'16n',t+i*0.08,0.95));}
+function sfxMiss(){if(!sfxOn||!audioReady)return;loseSynth.triggerAttackRelease('A3','8n');loseSynth.frequency.rampTo('A2',0.2);}
+function sfxSplash(){if(!sfxOn||!audioReady)return;const t=Tone.now();loseSynth.triggerAttackRelease('C3','4n',t);loseSynth.frequency.setValueAtTime('C3',t);loseSynth.frequency.rampTo('C2',0.4);}
+function sfxTick(){if(!sfxOn||!audioReady)return;hat.triggerAttackRelease('64n',Tone.now(),0.5);}
+
+// ================= 特效 =================
+function fx(cx,cy,pal,big){const n=big?40:24;
+  for(let i=0;i<n;i++){const a=Math.random()*Math.PI-Math.PI,sp=(big?11:6)*(0.4+Math.random());
+    particles.push({x:cx,y:cy,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp-3,r:2+Math.random()*4,life:1,color:pal[Math.random()<0.5?0:1]});}
+  ripples.push({x:cx,y:cy,r:6,max:big?140:80,life:1,color:pal[0]});}
+function showToast(t,c){const el=$('toast');el.textContent=t;el.style.color=c;el.classList.remove('show');void el.offsetWidth;el.classList.add('show');}
+
+// ================= 核心(全部加保护,杜绝卡死) =================
+function spawnMole(){try{const L=LEVELS[curLevel];if(moles.length>=L.maxActive)return;
+  const busy=moles.map(m=>m.midi);const avail=activeKeyMidis.filter(m=>!busy.includes(m));
+  if(!avail.length)return;const midi=avail[Math.floor(Math.random()*avail.length)];
+  moles.push({midi,born:performance.now(),ttl:L.ttl,ticked:false});lastMoleTime=performance.now();}catch(e){}}
+
+function press(midi,vel){try{
+  if(!running)return;flash(midi);
+  const idx=moles.findIndex(m=>m.midi===midi);const k=keyFor(midi);
+  if(idx>=0){const m=moles[idx];moles.splice(idx,1);
+    const ratio=(performance.now()-m.born)/m.ttl;const perfect=ratio<0.5;
+    combo++;score+=(perfect?15:10)+combo*2;
+    sfxHit(midi,perfect,combo);if(k)fx(k.cx,keyTop,colFor(midi),perfect);
+    const L=LEVELS[curLevel];
+    bear.pos=Math.max(0.04, bear.pos - L.bounce*0.6);
+    bear.vel=-(L.bounce*0.5*(perfect?1.3:1));
+    bear.hop=1;bear.flash=1;
+    splashes.push({x:0,life:1});
+    if(combo>0&&combo%10===0){showToast('🔥 '+combo+' 连击！','#FF6B9D');sfxCombo();bear.pos=Math.max(0.04,bear.pos-0.1);}
+    checkPass();
+  }else{combo=0;hurtBear();if(k)fx(k.cx,keyTop,['#888','#aaa'],false);sfxMiss();}
+  refreshHUD();
+}catch(e){}}
+function hurtBear(){bear.pos=Math.min(0.97,bear.pos+0.06);bear.vel+=0.02;}
+function missTimeout(){combo=0;hurtBear();sfxMiss();refreshHUD();}
+function checkPass(){if(score>=LEVELS[curLevel].goal)levelClear();}
+const flashMap={};function flash(m){flashMap[m]=performance.now()+150;}
+const MUSIC_NAMES=['🎵欢快','🎵放克','🎵舞曲','🎵快板','🎵终章'];
+function refreshHUD(){$('score').textContent=score;$('combo').textContent=combo;
+  $('best').textContent=prog.best;$('lvlName').textContent=(curLevel+1)+' · '+LEVELS[curLevel].t+' · '+MUSIC_NAMES[LEVELS[curLevel].music||0];
+  const goal=LEVELS[curLevel].goal;$('goalRemain').textContent=Math.max(0,goal-score);
+  $('goalBar').style.width=Math.min(100,score/goal*100)+'%';}
+
+let breaking=false;
+function tick(now){try{
+  const dt=lastTickTime?Math.min(0.05,(now-lastTickTime)/1000):0.016;lastTickTime=now;
+  waterPhase+=dt*1.5;
+  if(beatPulse>0)beatPulse*=0.88;
+  if(running&&!paused){
+    const L=LEVELS[curLevel];
+    bear.vel+=L.sink*dt*0.8;bear.vel*=0.90;bear.vel=Math.min(bear.vel,0.012);
+    bear.pos+=bear.vel;
+    if(bear.pos<0.04){bear.pos=0.04;bear.vel=0;}
+    if(bear.pos>=1){bear.pos=1;running=false;bearFall();}
+  }
+  if(bear.hop>0)bear.hop*=0.85;
+  if(bear.flash>0)bear.flash*=0.9;
+  if(running&&!paused){const L=LEVELS[curLevel];
+    // 追赶式生成:一帧内补足该出的地鼠,nextSpawn 不会落后卡死
+    let guard=0;
+    while(now>=nextSpawn && moles.length<L.maxActive && guard<5){
+      spawnMole();
+      nextSpawn=now+L.spawn[0]+Math.random()*(L.spawn[1]-L.spawn[0]);
+      guard++;
+    }
+    // 若到点但已满,推进 nextSpawn 防止下帧瞬间狂刷
+    if(now>=nextSpawn && moles.length>=L.maxActive){
+      nextSpawn=now+300;
+    }
+    // 看门狗:若太久没有任何地鼠(>spawn上限的1.5倍),强制冒一个,杜绝卡死
+    if(moles.length===0 && now-lastMoleTime>L.spawn[1]*1.5){
+      spawnMole();nextSpawn=now+L.spawn[0];
+    }
+    for(let i=moles.length-1;i>=0;i--){const m=moles[i];const left=1-(now-m.born)/m.ttl;
+      if(!m.ticked&&left<0.3){m.ticked=true;sfxTick();}
+      if(now-m.born>m.ttl){moles.splice(i,1);missTimeout();}}}
+  draw(now);
+}catch(e){}
+requestAnimationFrame(tick);}
+
+function bearFall(){if(breaking)return;breaking=true;sfxSplash();
+  const layout=bearLayout();
+  for(let i=0;i<30;i++){const a=-Math.PI/2+(Math.random()-0.5)*1.6,sp=4+Math.random()*8;
+    particles.push({x:layout.bx,y:layout.waterY,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,r:3+Math.random()*5,life:1,color:'#9DD6FF'});}
+  setTimeout(()=>{breaking=false;gameOver();},700);}
+
+// ================= 小熊绘制 =================
+function bearLayout(){
+  const bx=86;const topY=110;const waterY=keyTop-30;
+  const by=topY+bear.pos*(waterY-topY)-bear.hop*26; // hop 把熊往上抬
+  return {bx,topY,waterY,by};
+}
+function drawWater(now,waterY,bx){
+  // 水面:一条带波浪的横向水体,占左侧一条
+  const left=18,right=160,top=waterY;
+  ctx.save();
+  ctx.beginPath();ctx.moveTo(left,top);
+  for(let x=left;x<=right;x+=8){const y=top+Math.sin(x*0.12+waterPhase*2)*3;ctx.lineTo(x,y);}
+  ctx.lineTo(right,H);ctx.lineTo(left,H);ctx.closePath();
+  ctx.fillStyle='rgba(70,160,230,0.35)';ctx.fill();
+  ctx.strokeStyle='rgba(150,210,255,0.7)';ctx.lineWidth=2;
+  ctx.beginPath();ctx.moveTo(left,top);
+  for(let x=left;x<=right;x+=8){const y=top+Math.sin(x*0.12+waterPhase*2)*3;ctx.lineTo(x,y);}
+  ctx.stroke();ctx.restore();
+}
+function drawBear(now){
+  const {bx,waterY,by}=bearLayout();
+  const danger=bear.pos; // 0安全 1沉
+  drawWater(now,waterY,bx);
+  // 滑板(随 hop 轻微倾斜)
+  const tilt=Math.sin(now/120)*0.04 - bear.hop*0.1;
+  ctx.save();ctx.translate(bx,by+34);ctx.rotate(tilt);
+  ctx.fillStyle='#8B5A2B';
+  rr(-34,-7,68,14,7);ctx.fill();
+  ctx.fillStyle='#5C3A1A';
+  ctx.beginPath();ctx.arc(-22,9,5,0,7);ctx.fill();ctx.beginPath();ctx.arc(22,9,5,0,7);ctx.fill();
+  ctx.restore();
+  // 身体
+  const beat=1+beatPulse*0.06+bear.hop*0.12;
+  ctx.save();ctx.translate(bx,by);ctx.scale(beat,beat);
+  // 耳朵
+  ctx.fillStyle='#C8893E';
+  ctx.beginPath();ctx.arc(-15,-26,8,0,7);ctx.fill();ctx.beginPath();ctx.arc(15,-26,8,0,7);ctx.fill();
+  ctx.fillStyle='#E8B774';
+  ctx.beginPath();ctx.arc(-15,-26,4,0,7);ctx.fill();ctx.beginPath();ctx.arc(15,-26,4,0,7);ctx.fill();
+  // 身体
+  ctx.fillStyle='#D89A4E';
+  rr(-18,-6,36,34,14);ctx.fill();
+  // 肚皮
+  ctx.fillStyle='#F2D9A8';
+  ctx.beginPath();ctx.ellipse(0,12,11,13,0,0,7);ctx.fill();
+  // 手:害怕时举起来
+  ctx.fillStyle='#C8893E';
+  const armUp=danger*18;
+  ctx.beginPath();ctx.arc(-19,4-armUp,6,0,7);ctx.fill();
+  ctx.beginPath();ctx.arc(19,4-armUp,6,0,7);ctx.fill();
+  // 头
+  ctx.fillStyle='#E0A85A';
+  ctx.beginPath();ctx.arc(0,-20,18,0,7);ctx.fill();
+  // 口鼻
+  ctx.fillStyle='#F2D9A8';ctx.beginPath();ctx.ellipse(0,-14,9,7,0,0,7);ctx.fill();
+  ctx.fillStyle='#5C3A1A';ctx.beginPath();ctx.arc(0,-16,2.5,0,7);ctx.fill();
+  // 眼睛 + 表情(随危险变化)
+  drawBearFace(danger);
+  ctx.restore();
+  // 危险文字
+  ctx.fillStyle=danger>0.65?'#FF8585':'rgba(255,255,255,0.6)';ctx.font='12px sans-serif';ctx.textAlign='center';
+  ctx.fillText(danger>0.75?'快掉水里了!':(danger>0.5?'撑住!':'小熊'),bx,waterY+18);
+}
+function drawBearFace(danger){
+  ctx.fillStyle='#3A2410';
+  if(danger<0.4){
+    // 开心:弯弯眼 + 微笑
+    ctx.lineWidth=2;ctx.strokeStyle='#3A2410';
+    ctx.beginPath();ctx.arc(-7,-22,3,0.1*Math.PI,0.9*Math.PI);ctx.stroke();
+    ctx.beginPath();ctx.arc(7,-22,3,0.1*Math.PI,0.9*Math.PI);ctx.stroke();
+    ctx.beginPath();ctx.arc(0,-12,4,0.1*Math.PI,0.9*Math.PI);ctx.stroke();
+    // 腮红
+    ctx.fillStyle='rgba(255,150,150,0.5)';ctx.beginPath();ctx.arc(-11,-13,3,0,7);ctx.fill();ctx.beginPath();ctx.arc(11,-13,3,0,7);ctx.fill();
+  }else if(danger<0.7){
+    // 紧张:圆眼 + 直嘴
+    ctx.beginPath();ctx.arc(-7,-22,3,0,7);ctx.fill();ctx.beginPath();ctx.arc(7,-22,3,0,7);ctx.fill();
+    ctx.lineWidth=2;ctx.strokeStyle='#3A2410';
+    ctx.beginPath();ctx.moveTo(-4,-11);ctx.lineTo(4,-11);ctx.stroke();
+    // 汗滴
+    ctx.fillStyle='rgba(120,200,255,0.9)';ctx.beginPath();ctx.arc(15,-24,3,0,7);ctx.fill();
+  }else{
+    // 惊恐:大圆眼 + 张嘴 O + 抖
+    const j=Math.sin(performance.now()/40)*1.5;
+    ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(-7+j,-23,4.5,0,7);ctx.fill();ctx.beginPath();ctx.arc(7+j,-23,4.5,0,7);ctx.fill();
+    ctx.fillStyle='#3A2410';ctx.beginPath();ctx.arc(-7+j,-22,2.2,0,7);ctx.fill();ctx.beginPath();ctx.arc(7+j,-22,2.2,0,7);ctx.fill();
+    ctx.fillStyle='#7A2A2A';ctx.beginPath();ctx.ellipse(0,-10,3.5,4.5,0,0,7);ctx.fill();
+    // 大汗
+    ctx.fillStyle='rgba(120,200,255,0.95)';ctx.beginPath();ctx.arc(16,-24,3.5,0,7);ctx.fill();ctx.beginPath();ctx.arc(-16,-20,3,0,7);ctx.fill();
+  }
+}
+function rr(x,y,w,h,r){r=Math.min(r,w/2,h/2);ctx.beginPath();ctx.moveTo(x+r,y);
+  ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();}
+
+function drawHand(x,y,scale){ctx.save();ctx.translate(x,y);ctx.scale(scale,scale);
+  ctx.fillStyle='rgba(255,255,255,0.12)';ctx.beginPath();ctx.ellipse(0,30,34,26,0,0,7);ctx.fill();
+  const fingers=[{a:-60,len:46,n:5},{a:-30,len:54,n:4},{a:0,len:60,n:3},{a:30,len:54,n:2},{a:62,len:40,n:1}];
+  fingers.forEach(f=>{const rad=f.a*Math.PI/180;const ex=Math.sin(rad)*f.len,ey=10-Math.cos(rad)*f.len;
+    ctx.strokeStyle='rgba(255,255,255,0.2)';ctx.lineWidth=11;ctx.lineCap='round';
+    ctx.beginPath();ctx.moveTo(Math.sin(rad)*14,10-Math.cos(rad)*14);ctx.lineTo(ex,ey);ctx.stroke();
+    ctx.fillStyle=FINGER_COLORS[f.n];ctx.beginPath();ctx.arc(ex,ey,9,0,7);ctx.fill();
+    ctx.fillStyle='#1a1a22';ctx.font='bold 12px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillText(f.n,ex,ey);});ctx.restore();ctx.textBaseline='alphabetic';}
+
+function draw(now){ctx.fillStyle='rgba(10,10,20,0.3)';ctx.fillRect(0,0,W,H);
+  ctx.strokeStyle='rgba(255,255,255,0.04)';ctx.lineWidth=1;
+  keys.forEach(k=>{ctx.beginPath();ctx.moveTo(k.x,0);ctx.lineTo(k.x,keyTop);ctx.stroke();});
+  if(running||breaking)drawBear(now);
+  if(running){moles.forEach(m=>{const k=keyFor(m.midi);if(!k)return;const pal=colFor(m.midi);
+    const left=1-(now-m.born)/m.ttl;const cy=keyTop-95;const R=Math.min(k.w*0.4,52);
+    ctx.beginPath();ctx.arc(k.cx,cy,R,-Math.PI/2,-Math.PI/2+left*Math.PI*2);
+    ctx.strokeStyle=left<0.3?'#FF8585':pal[0];ctx.lineWidth=6;ctx.lineCap='round';ctx.stroke();
+    ctx.beginPath();ctx.arc(k.cx,cy,R*0.62,0,7);ctx.fillStyle=pal[0];ctx.globalAlpha=0.85;ctx.fill();ctx.globalAlpha=1;
+    ctx.fillStyle='#fff';ctx.font='bold 20px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillText(midiName(m.midi),k.cx,cy-6);
+    ctx.fillStyle=FINGER_COLORS[k.finger];ctx.beginPath();ctx.arc(k.cx,cy+16,11,0,7);ctx.fill();
+    ctx.fillStyle='#1a1a22';ctx.font='bold 14px sans-serif';ctx.fillText(k.finger,k.cx,cy+16);ctx.textBaseline='alphabetic';});}
+  keys.forEach(k=>{const lit=flashMap[k.midi]>now;const hasMole=running&&moles.some(m=>m.midi===k.midi);
+    ctx.fillStyle=lit?'#9DE5B5':(hasMole?'#FFE9B0':'#f4f4f8');
+    ctx.fillRect(k.x+1,keyTop,k.w-2,keyH);ctx.strokeStyle='rgba(0,0,0,0.25)';ctx.lineWidth=1;ctx.strokeRect(k.x+1,keyTop,k.w-2,keyH);
+    ctx.fillStyle=FINGER_COLORS[k.finger];ctx.beginPath();ctx.arc(k.cx,keyTop+keyH-44,12,0,7);ctx.fill();
+    ctx.fillStyle='#1a1a22';ctx.font='bold 14px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillText(k.finger,k.cx,keyTop+keyH-44);ctx.textBaseline='alphabetic';
+    ctx.fillStyle='rgba(40,40,60,0.6)';ctx.font='15px sans-serif';ctx.fillText(midiName(k.midi),k.cx,keyTop+keyH-16);});
+  if(running){ctx.fillStyle='rgba(255,255,255,0.4)';ctx.font='12px sans-serif';ctx.textAlign='center';
+    ctx.fillText('右手',W-70,keyTop-150);drawHand(W-70,keyTop-130,0.85);}
+  for(let i=ripples.length-1;i>=0;i--){const r=ripples[i];r.r+=(r.max-r.r)*0.13;r.life-=0.03;
+    ctx.beginPath();ctx.arc(r.x,r.y,r.r,0,7);ctx.strokeStyle=r.color;ctx.globalAlpha=Math.max(0,r.life)*0.6;ctx.lineWidth=2;ctx.stroke();if(r.life<=0)ripples.splice(i,1);}
+  ctx.globalAlpha=1;
+  for(let i=particles.length-1;i>=0;i--){const p=particles[i];p.vy+=0.2;p.x+=p.vx;p.y+=p.vy;p.vx*=0.99;p.life-=0.014;
+    ctx.beginPath();ctx.arc(p.x,p.y,Math.max(0,p.r),0,7);ctx.fillStyle=p.color;ctx.globalAlpha=Math.max(0,p.life);ctx.fill();
+    if(p.life<=0||p.y>H)particles.splice(i,1);}
+  ctx.globalAlpha=1;}
+
+function renderKbPreview(){const wrap=$('kbPreview');if(!wrap)return;wrap.innerHTML='';
+  const n=LEVELS[curLevel].keys;
+  WHITE.slice(0,n).forEach((m,i)=>{const f=fingerFor(i);const key=document.createElement('div');
+    key.style.cssText='width:34px;height:74px;background:#f4f4f8;border-radius:0 0 5px 5px;border:1px solid rgba(0,0,0,0.2);display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:3px;padding-bottom:5px;';
+    key.innerHTML=`<span style="width:18px;height:18px;border-radius:50%;background:${FINGER_COLORS[f]};color:#1a1a22;font-weight:700;font-size:11px;display:flex;align-items:center;justify-content:center;">${f}</span><span style="color:rgba(40,40,60,0.7);font-size:12px;">${midiName(m)}</span>`;
+    wrap.appendChild(key);});}
+function buildLevelGrid(container){const wrap=container||$('lvlGrid');if(!wrap)return;wrap.innerHTML='';
+  LEVELS.forEach((L,i)=>{const locked=i>=prog.unlocked;const b=document.createElement('button');
+    b.textContent=(locked?'🔒':(i+1))+' '+L.t;b.style.opacity=locked?'0.4':'1';
+    if(i===curLevel&&!locked)b.style.borderColor='#5DCAA5';b.disabled=locked;
+    b.onclick=()=>{curLevel=i;layoutKeys();refreshHUD();buildLevelGrid(wrap);renderKbPreview();
+      $('bigPlay').textContent='开始第 '+(i+1)+' 关';};wrap.appendChild(b);});}
+
+async function startGame(){try{await initAudio();setMusicTier(LEVELS[curLevel].music||0);startBgm();}catch(e){}
+  score=0;combo=0;moles=[];bear={pos:0.2,vel:0,hop:0,flash:0};breaking=false;lastTickTime=0;
+  splashes.length=0;particles.length=0;ripples.length=0;lastMoleTime=performance.now();
+  nextSpawn=performance.now()+1200;running=true;paused=false;
+  layoutKeys();refreshHUD();$('overlay').classList.add('hidden');
+  $('pauseBtn').classList.remove('hidden');$('goalWrap').classList.remove('hidden');}
+
+function levelClear(){running=false;$('pauseBtn').classList.add('hidden');$('goalWrap').classList.add('hidden');sfxLevel();
+  let unlockedNew=false;
+  if(curLevel+1<LEVELS.length&&curLevel+1>=prog.unlocked){prog.unlocked=curLevel+2;persist();unlockedNew=true;}
+  if(score>prog.best){prog.best=score;persist();}
+  const hasNext=curLevel+1<LEVELS.length;const ov=$('overlay');ov.classList.remove('hidden');
+  ov.innerHTML=`<h1 style="color:#5DCAA5">🎉 第 ${curLevel+1} 关通关！</h1>
+    <div id="resultStats"><div><b style="color:#fff">${score}</b>本关得分</div><div><b style="color:#5DCAA5">${prog.best}</b>最高分</div></div>
+    ${unlockedNew&&hasNext?'<p class="unlockMsg">🔓 解锁第 '+(curLevel+2)+' 关：'+LEVELS[curLevel+1].t+'</p>':''}
+    <p>${hasNext?'小熊这关稳稳的没下水！继续下一关。':'全部 '+LEVELS.length+' 关通关，小熊给你鼓掌！'}</p>
+    <div id="lcBtns" style="display:flex;gap:12px;flex-wrap:wrap;justify-content:center;"></div>`;
+  const wrap=$('lcBtns');
+  if(hasNext){const b=document.createElement('button');b.textContent='▶ 下一关：'+LEVELS[curLevel+1].t;
+    b.style.cssText='background:rgba(80,120,255,0.92);border:none;font-size:17px;padding:13px 30px;font-weight:600;border-radius:10px;';
+    b.onclick=()=>{curLevel++;startGame();};wrap.appendChild(b);}
+  const r=document.createElement('button');r.textContent='↻ 再刷本关';r.style.cssText='font-size:17px;padding:13px 30px;';
+  r.onclick=startGame;wrap.appendChild(r);}
+
+function gameOver(){running=false;$('pauseBtn').classList.add('hidden');$('goalWrap').classList.add('hidden');
+  if(bgmBus)bgmBus.gain.rampTo(0.15,0.5);if(score>prog.best){prog.best=score;persist();}
+  const ov=$('overlay');ov.classList.remove('hidden');const progPct=Math.round(score/LEVELS[curLevel].goal*100);
+  ov.innerHTML=`<h1 style="color:#9DD6FF">💦 小熊掉水里了！</h1>
+    <div id="resultStats"><div><b style="color:#fff">${score}</b>本次得分</div><div><b style="color:#9DB4FF">${progPct}%</b>本关进度</div></div>
+    <p>小熊一直在往下沉，要弹得勤、按得准才托得住它。圈刚冒出来就按，弹得最高、分也最多。</p>
+    <button id="bigPlay2" style="background:rgba(80,120,255,0.92);border:none;font-size:18px;padding:14px 44px;font-weight:600;border-radius:10px;">↻ 再救一次小熊</button>`;
+  $('bigPlay2').onclick=startGame;}
+
+$('bigPlay').onclick=startGame;
+$('pauseBtn').onclick=()=>{paused=!paused;$('pauseBtn').textContent=paused?'继续':'暂停';if(!paused){nextSpawn=performance.now()+600;lastTickTime=0;}};
+$('bgmBtn').onclick=()=>{bgmOn=!bgmOn;$('bgmBtn').classList.toggle('on',bgmOn);if(audioReady&&bgmBus)bgmBus.gain.rampTo(bgmOn?0.7:0,0.3);};
+$('sfxBtn').onclick=()=>{sfxOn=!sfxOn;$('sfxBtn').classList.toggle('on',sfxOn);};
+
+function setStatus(t,ok){$('status').textContent=t;$('status').className=ok?'ok':'';}
+function onMIDI(msg){try{const[c,n,v]=msg.data;if((c&0xf0)===0x90&&v>0)press(n,v/127);}catch(e){}}
+async function initMIDI(){if(!navigator.requestMIDIAccess){setStatus('请用 Chrome/Edge',false);return;}
+  try{const acc=await navigator.requestMIDIAccess();
+    function refresh(){const ins=[...acc.inputs.values()];
+      if(ins.length){ins.forEach(i=>i.onmidimessage=onMIDI);setStatus('🎹 已连接',true);
+        const os=$('ovStatus');if(os){os.textContent='钢琴已连接 ✓ 选关卡，点开始';os.style.color='#5DCAA5';}}
+      else setStatus('未检测到钢琴',false);}
+    acc.onstatechange=refresh;refresh();}catch(e){setStatus('需允许 MIDI',false);}}
+initMIDI();
+
+const km='asdfghjkl';const down={};
+window.addEventListener('keydown',e=>{const i=km.indexOf(e.key.toLowerCase());
+  if(i>=0&&!down[e.key]){down[e.key]=true;press(WHITE[i],0.8);}});
+window.addEventListener('keyup',e=>{down[e.key]=false;});
+
+curLevel=0;layoutKeys();buildLevelGrid();renderKbPreview();refreshHUD();$('best').textContent=prog.best;
+resize();requestAnimationFrame(tick);
+</script>
+</body>
+</html>
