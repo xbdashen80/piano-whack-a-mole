@@ -2,8 +2,18 @@
 // 背景鼓机/贝斯/旋律 + 命中等音效。Tone 由 index.html 的 CDN 脚本以全局形式提供。
 import { MUSIC } from './levels.js';
 import { game } from './state.js';
+import { logErr } from './diagnostics.js';
 
 export const audio = { ready: false, bgmOn: true, sfxOn: true };
+
+// 音效排程游标：单音合成器要求每次触发的开始时间严格递增，否则 Tone 抛
+// "Start time must be strictly greater than previous start time"，而该异常曾在
+// 过关瞬间冒泡进 levelClear，导致弹窗不显示、游戏僵死（P0 根因）。
+let sfxClock = 0;
+function sfxBase() { const t = Math.max(Tone.now(), sfxClock + 0.002); return t; }
+function bump(t) { if (t > sfxClock) sfxClock = t; }
+// 任何音频异常都不得冒泡进游戏逻辑：音效是副作用，绝不能阻断状态机。
+function safe(fn) { try { fn(); } catch (e) { logErr('audio', e); } }
 
 let hitSynth, hitSynth2, arpSynth, loseSynth, reverb, sfxBus, bgmBus, kick, snare, hat, bass, lead, drumLoop;
 
@@ -60,24 +70,36 @@ export function duckBgm() { if (bgmBus) bgmBus.gain.rampTo(0.15, 0.5); }
 
 export function sfxHit(midi, perfect, comboN) {
   if (!audio.sfxOn || !audio.ready) return;
-  const base = Tone.Frequency(midi, 'midi').toFrequency(); const pitch = base * (1 + Math.min(comboN, 12) * 0.06);
-  const t = Tone.now(); hitSynth.triggerAttackRelease(pitch, '16n', t, perfect ? 1 : 0.8); hitSynth2.triggerAttackRelease(pitch * 2, '32n', t, 0.6);
+  safe(() => {
+    const base = Tone.Frequency(midi, 'midi').toFrequency(); const pitch = base * (1 + Math.min(comboN, 12) * 0.06);
+    const t = sfxBase(); hitSynth.triggerAttackRelease(pitch, '16n', t, perfect ? 1 : 0.8); hitSynth2.triggerAttackRelease(pitch * 2, '32n', t, 0.6); bump(t);
+  });
 }
 export function sfxCombo() {
-  if (!audio.sfxOn || !audio.ready) return; const t = Tone.now();
-  ['C5', 'E5', 'G5', 'C6'].forEach((n, i) => arpSynth.triggerAttackRelease(n, '16n', t + i * 0.05));
+  if (!audio.sfxOn || !audio.ready) return;
+  safe(() => {
+    const notes = ['C5', 'E5', 'G5', 'C6']; const t = sfxBase();
+    notes.forEach((n, i) => arpSynth.triggerAttackRelease(n, '16n', t + i * 0.05)); bump(t + notes.length * 0.05);
+  });
 }
 export function sfxLevel() {
-  if (!audio.sfxOn || !audio.ready) return; const t = Tone.now();
-  ['C5', 'D5', 'E5', 'G5', 'C6', 'E6'].forEach((n, i) => arpSynth.triggerAttackRelease(n, '16n', t + i * 0.08, 0.95));
+  if (!audio.sfxOn || !audio.ready) return;
+  safe(() => {
+    const notes = ['C5', 'D5', 'E5', 'G5', 'C6', 'E6']; const t = sfxBase();
+    notes.forEach((n, i) => arpSynth.triggerAttackRelease(n, '16n', t + i * 0.08, 0.95)); bump(t + notes.length * 0.08);
+  });
 }
 export function sfxMiss() {
-  if (!audio.sfxOn || !audio.ready) return; loseSynth.triggerAttackRelease('A3', '8n'); loseSynth.frequency.rampTo('A2', 0.2);
+  if (!audio.sfxOn || !audio.ready) return;
+  safe(() => { const t = sfxBase(); loseSynth.triggerAttackRelease('A3', '8n', t); loseSynth.frequency.rampTo('A2', 0.2); bump(t); });
 }
 export function sfxSplash() {
-  if (!audio.sfxOn || !audio.ready) return; const t = Tone.now();
-  loseSynth.triggerAttackRelease('C3', '4n', t); loseSynth.frequency.setValueAtTime('C3', t); loseSynth.frequency.rampTo('C2', 0.4);
+  if (!audio.sfxOn || !audio.ready) return;
+  safe(() => {
+    const t = sfxBase(); loseSynth.triggerAttackRelease('C3', '4n', t); loseSynth.frequency.setValueAtTime('C3', t); loseSynth.frequency.rampTo('C2', 0.4); bump(t);
+  });
 }
 export function sfxTick() {
-  if (!audio.sfxOn || !audio.ready) return; hat.triggerAttackRelease('64n', Tone.now(), 0.5);
+  if (!audio.sfxOn || !audio.ready) return;
+  safe(() => { const t = sfxBase(); hat.triggerAttackRelease('64n', t, 0.5); bump(t); });
 }

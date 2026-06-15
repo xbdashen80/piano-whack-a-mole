@@ -91,11 +91,13 @@ async function startGame(i) {
 }
 
 function levelClear() {
-  game.running = false; ui.exitPlayUI(); sfxLevel();
+  // 关键状态/存档/弹窗优先，音效放最后——副作用绝不能阻断过关流程（P0 教训）。
+  game.running = false; ui.exitPlayUI();
   let unlockedNew = false;
   if (game.curLevel + 1 < LEVELS.length && game.curLevel + 1 >= prog.unlocked) { prog.unlocked = game.curLevel + 2; persist(); unlockedNew = true; }
   if (game.score > prog.best) { prog.best = game.score; persist(); }
   ui.showLevelClear(unlockedNew);
+  sfxLevel();
 }
 
 function gameOver() {
