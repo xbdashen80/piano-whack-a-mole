@@ -1,4 +1,5 @@
 // 回归测试：免鼠标推进——连敲两下同一个琴键可触发覆盖层主操作（开始/下一关/重来）。
+import './_tone-stub.mjs';
 const noop = () => {};
 const ctxProxy = new Proxy({}, { get: () => () => {}, set: () => true });
 const elements = new Map();

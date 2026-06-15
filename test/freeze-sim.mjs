@@ -3,6 +3,7 @@
 //
 // 用法: node test/freeze-sim.mjs [frames]
 // 失败时打印触发瞬间的完整状态，便于定位根因。
+import './_tone-stub.mjs';
 
 // ---------- 可复现随机 ----------
 function mulberry32(a) {

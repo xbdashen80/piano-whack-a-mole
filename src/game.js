@@ -81,7 +81,7 @@ function tick(now) {
 
 async function startGame(i) {
   if (typeof i === 'number') game.curLevel = i;
-  try { await initAudio(); setMusicTier(LEVELS[game.curLevel].music || 0); startBgm(); } catch (e) {}
+  try { await initAudio(); setMusicTier(LEVELS[game.curLevel].music || 0); startBgm(); } catch (e) { logErr('initAudio', e); }
   game.score = 0; game.combo = 0; game.moles = [];
   Object.assign(bear, { pos: 0.2, vel: 0, hop: 0, flash: 0 });
   game.breaking = false; game.lastTickTime = 0;

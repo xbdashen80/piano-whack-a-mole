@@ -15,32 +15,71 @@ function bump(t) { if (t > sfxClock) sfxClock = t; }
 // 任何音频异常都不得冒泡进游戏逻辑：音效是副作用，绝不能阻断状态机。
 function safe(fn) { try { fn(); } catch (e) { logErr('audio', e); } }
 
-let hitSynth, hitSynth2, arpSynth, loseSynth, reverb, sfxBus, bgmBus, kick, snare, hat, bass, lead, drumLoop;
+// 音效链
+let hitSynth, hitSynth2, arpSynth, loseSynth, tickSynth, sfxReverb, sfxBus;
+// 背景乐：主控链 + 鼓组分层 + 贝斯/sub + 旋律 + 铺底 pad
+let limiter, bgmComp, bgmEq, bgmBus, bgmReverb, bgmReverbSend;
+let kick, snareNoise, snareBody, hat, hatHP, bass, sub, lead, pad, padFilter, drumLoop;
+
+// 取第 s 步当前生效的贝斯根音（向前回溯到最近的非空），用于 pad 跟和声
+function bassRootAt(M, s) {
+  if (!M.bass) return null;
+  for (let i = s; i >= 0; i--) if (M.bass[i]) return M.bass[i];
+  return M.bass.find(Boolean) || null;
+}
+const semis = (note, n) => Tone.Frequency(note).transpose(n).toNote();
 
 export async function initAudio() {
   if (audio.ready) return;
   await Tone.start();
   Tone.Transport.bpm.value = 96;
-  reverb = new Tone.Reverb({ decay: 1.6, wet: 0.22 }).toDestination();
-  sfxBus = new Tone.Gain(0.9).connect(reverb); sfxBus.connect(Tone.getDestination());
+
+  // ---------- 总限幅器（防爆音，统一汇入） ----------
+  limiter = new Tone.Limiter(-1).toDestination();
+
+  // ---------- 音效链（独立于 bgm，不被闪避） ----------
+  sfxReverb = new Tone.Reverb({ decay: 1.6, wet: 0.22 }).connect(limiter);
+  sfxBus = new Tone.Gain(0.9).connect(sfxReverb); sfxBus.connect(limiter);
   hitSynth = new Tone.Synth({ oscillator: { type: 'square' }, envelope: { attack: 0.001, decay: 0.12, sustain: 0, release: 0.08 } }).connect(sfxBus); hitSynth.volume.value = -6;
   hitSynth2 = new Tone.Synth({ oscillator: { type: 'sawtooth' }, envelope: { attack: 0.001, decay: 0.1, sustain: 0, release: 0.06 } }).connect(sfxBus); hitSynth2.volume.value = -12;
   arpSynth = new Tone.Synth({ oscillator: { type: 'square' }, envelope: { attack: 0.001, decay: 0.1, sustain: 0.05, release: 0.1 } }).connect(sfxBus); arpSynth.volume.value = -7;
   loseSynth = new Tone.Synth({ oscillator: { type: 'sawtooth' }, envelope: { attack: 0.002, decay: 0.25, sustain: 0, release: 0.1 } }).connect(sfxBus); loseSynth.volume.value = -8;
-  bgmBus = new Tone.Gain(0.7).toDestination();
-  kick = new Tone.MembraneSynth({ pitchDecay: 0.03, octaves: 6, envelope: { attack: 0.001, decay: 0.32, sustain: 0 } }).connect(bgmBus); kick.volume.value = -3;
-  snare = new Tone.NoiseSynth({ noise: { type: 'white' }, envelope: { attack: 0.001, decay: 0.16, sustain: 0 } }).connect(bgmBus); snare.volume.value = -12;
-  hat = new Tone.NoiseSynth({ noise: { type: 'white' }, envelope: { attack: 0.001, decay: 0.04, sustain: 0 } }).connect(bgmBus); hat.volume.value = -20;
-  bass = new Tone.Synth({ oscillator: { type: 'triangle' }, envelope: { attack: 0.02, decay: 0.2, sustain: 0.4, release: 0.2 } }).connect(bgmBus); bass.volume.value = -10;
-  lead = new Tone.Synth({ oscillator: { type: 'square' }, envelope: { attack: 0.01, decay: 0.1, sustain: 0.1, release: 0.1 } }).connect(bgmBus); lead.volume.value = -13;
+  tickSynth = new Tone.NoiseSynth({ noise: { type: 'white' }, envelope: { attack: 0.001, decay: 0.03, sustain: 0 } }).connect(sfxBus); tickSynth.volume.value = -22;
+
+  // ---------- 背景乐主控链：bgmBus → EQ3 → 压缩器 → 限幅器 ----------
+  bgmComp = new Tone.Compressor({ threshold: -20, ratio: 3, attack: 0.005, release: 0.15 }).connect(limiter);
+  bgmEq = new Tone.EQ3({ low: 3, mid: -1, high: 2, lowFrequency: 180, highFrequency: 3200 }).connect(bgmComp);
+  bgmBus = new Tone.Gain(0.7).connect(bgmEq);              // bgm 总音量/开关/闪避都作用在这里
+  bgmReverb = new Tone.Reverb({ decay: 2.0, wet: 1 }).connect(bgmBus); // 混响回流到 bgmBus，随 bgm 一起闪避
+  bgmReverbSend = new Tone.Gain(0.18).connect(bgmReverb);  // 各乐器按需送一份到混响
+
+  // ---------- 鼓组（分层，更冲更脆） ----------
+  kick = new Tone.MembraneSynth({ pitchDecay: 0.028, octaves: 7, oscillator: { type: 'sine' }, envelope: { attack: 0.001, decay: 0.34, sustain: 0, release: 0.02 } }).connect(bgmBus); kick.volume.value = -2;
+  snareNoise = new Tone.NoiseSynth({ noise: { type: 'white' }, envelope: { attack: 0.001, decay: 0.14, sustain: 0 } }).connect(bgmBus); snareNoise.volume.value = -13; snareNoise.connect(bgmReverbSend);
+  snareBody = new Tone.Synth({ oscillator: { type: 'triangle' }, envelope: { attack: 0.001, decay: 0.12, sustain: 0, release: 0.02 } }).connect(bgmBus); snareBody.volume.value = -17;
+  hatHP = new Tone.Filter(7000, 'highpass').connect(bgmBus);
+  hat = new Tone.NoiseSynth({ noise: { type: 'white' }, envelope: { attack: 0.001, decay: 0.035, sustain: 0 } }).connect(hatHP); hat.volume.value = -16;
+
+  // ---------- 贝斯：带滤波包络的 MonoSynth + 低八度 sub ----------
+  bass = new Tone.MonoSynth({ oscillator: { type: 'sawtooth' }, filter: { Q: 1, type: 'lowpass' }, filterEnvelope: { attack: 0.01, decay: 0.2, sustain: 0.4, release: 0.2, baseFrequency: 120, octaves: 2.6 }, envelope: { attack: 0.02, decay: 0.2, sustain: 0.5, release: 0.2 } }).connect(bgmBus); bass.volume.value = -9;
+  sub = new Tone.Synth({ oscillator: { type: 'sine' }, envelope: { attack: 0.02, decay: 0.2, sustain: 0.6, release: 0.2 } }).connect(bgmBus); sub.volume.value = -12;
+
+  // ---------- 旋律 + 铺底 pad（补满空隙） ----------
+  lead = new Tone.Synth({ oscillator: { type: 'fatsquare', count: 2, spread: 18 }, envelope: { attack: 0.01, decay: 0.12, sustain: 0.12, release: 0.12 } }).connect(bgmBus); lead.volume.value = -14; lead.connect(bgmReverbSend);
+  padFilter = new Tone.Filter(1200, 'lowpass').connect(bgmBus); padFilter.connect(bgmReverbSend);
+  pad = new Tone.PolySynth(Tone.Synth).connect(padFilter); pad.volume.value = -23;
+  pad.set({ oscillator: { type: 'fatsawtooth', count: 2, spread: 20 }, envelope: { attack: 0.4, decay: 0.3, sustain: 0.7, release: 1.2 } });
+
   let step = 0;
   drumLoop = new Tone.Loop((time) => {
     const s = step % 16; const M = MUSIC[game.musicTier];
     if (M.kick[s]) { kick.triggerAttackRelease('C1', '8n', time); Tone.Draw.schedule(() => { game.beatPulse = 1; }, time); }
-    if (M.snare[s]) snare.triggerAttackRelease('16n', time);
+    if (M.snare[s]) { snareNoise.triggerAttackRelease('16n', time); snareBody.triggerAttackRelease('G3', '16n', time, 0.7); }
     if (M.hat[s]) hat.triggerAttackRelease('32n', time, M.tier >= 3 ? 0.8 : 0.5);
-    if (M.bass && M.bass[s]) bass.triggerAttackRelease(M.bass[s], '8n', time);
+    if (M.bass && M.bass[s]) { bass.triggerAttackRelease(M.bass[s], '8n', time); sub.triggerAttackRelease(semis(M.bass[s], -12), '8n', time); }
     if (M.lead && M.lead[s]) lead.triggerAttackRelease(M.lead[s], '16n', time);
+    // 每半小节（每 8 步）按当前贝斯根音铺一个纯五度和弦，中性不跑调，补满空隙
+    if (s % 8 === 0) { const r = bassRootAt(M, s); if (r) pad.triggerAttackRelease([semis(r, 12), semis(r, 19), semis(r, 24)], '2n', time, 0.5); }
     step++;
   }, '16n');
   audio.ready = true;
@@ -101,5 +140,5 @@ export function sfxSplash() {
 }
 export function sfxTick() {
   if (!audio.sfxOn || !audio.ready) return;
-  safe(() => { const t = sfxBase(); hat.triggerAttackRelease('64n', t, 0.5); bump(t); });
+  safe(() => { const t = sfxBase(); tickSynth.triggerAttackRelease('64n', t, 0.5); bump(t); });
 }
