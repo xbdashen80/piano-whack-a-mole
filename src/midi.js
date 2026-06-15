@@ -2,9 +2,10 @@
 import { emit } from './events.js';
 import { setStatus, markMidiConnected } from './ui.js';
 import { WHITE } from './levels.js';
+import { logErr } from './diagnostics.js';
 
 function onMIDI(msg) {
-  try { const [c, n, v] = msg.data; if ((c & 0xf0) === 0x90 && v > 0) emit('press', n, v / 127); } catch (e) {}
+  try { const [c, n, v] = msg.data; if ((c & 0xf0) === 0x90 && v > 0) emit('press', n, v / 127); } catch (e) { logErr('onMIDI', e); }
 }
 
 export async function initMIDI() {

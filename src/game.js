@@ -5,6 +5,7 @@ import { initAudio, setMusicTier, startBgm, sfxHit, sfxCombo, sfxMiss, sfxLevel,
 import { fx, draw } from './render.js';
 import { applySink, decayAnim } from './bear.js';
 import { on } from './events.js';
+import { logErr, spawnWatchdog } from './diagnostics.js';
 import * as ui from './ui.js';
 
 const flash = m => { flashMap[m] = performance.now() + 150; };
@@ -15,7 +16,7 @@ function spawnMole() {
     const busy = game.moles.map(m => m.midi); const avail = kb.activeKeyMidis.filter(m => !busy.includes(m));
     if (!avail.length) return; const midi = avail[Math.floor(Math.random() * avail.length)];
     game.moles.push({ midi, born: performance.now(), ttl: L.ttl, ticked: false }); game.lastMoleTime = performance.now();
-  } catch (e) {}
+  } catch (e) { logErr('spawnMole', e); }
 }
 
 function press(midi, vel) {
@@ -37,7 +38,7 @@ function press(midi, vel) {
       game.combo = 0; hurtBear(); if (k) fx(k.cx, kb.keyTop, ['#888', '#aaa'], false); sfxMiss();
     }
     ui.refreshHUD();
-  } catch (e) {}
+  } catch (e) { logErr('press', e); }
 }
 
 function hurtBear() { bear.pos = Math.min(0.97, bear.pos + 0.06); bear.vel += 0.02; }
@@ -71,9 +72,10 @@ function tick(now) {
         if (!m.ticked && left < 0.3) { m.ticked = true; sfxTick(); }
         if (now - m.born > m.ttl) { game.moles.splice(i, 1); missTimeout(); }
       }
+      spawnWatchdog(now, game, L); // 生成停摆时打印现场快照
     }
     draw(now);
-  } catch (e) {}
+  } catch (e) { logErr('tick', e); }
   requestAnimationFrame(tick);
 }
 
