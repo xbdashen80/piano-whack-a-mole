@@ -6,6 +6,9 @@ import { logErr } from './diagnostics.js';
 
 export const audio = { ready: false, bgmOn: true, sfxOn: true };
 
+// 背景乐总音量基准（开关/闪避都相对它），推高一点让信号撞到限幅、更响更冲
+const BGM_LEVEL = 0.85;
+
 // 音效排程游标：单音合成器要求每次触发的开始时间严格递增，否则 Tone 抛
 // "Start time must be strictly greater than previous start time"，而该异常曾在
 // 过关瞬间冒泡进 levelClear，导致弹窗不显示、游戏僵死（P0 根因）。
@@ -18,8 +21,8 @@ function safe(fn) { try { fn(); } catch (e) { logErr('audio', e); } }
 // 音效链
 let hitSynth, hitSynth2, arpSynth, loseSynth, tickSynth, sfxReverb, sfxBus;
 // 背景乐：主控链 + 鼓组分层 + 贝斯/sub + 旋律 + 铺底 pad
-let limiter, bgmComp, bgmEq, bgmBus, bgmReverb, bgmReverbSend;
-let kick, snareNoise, snareBody, hat, hatHP, bass, sub, lead, pad, padFilter, drumLoop;
+let limiter, bgmComp, bgmEq, bgmBus, bgmReverb, bgmReverbSend, pumpGain, drumDrive;
+let kick, kickClick, kickClickHP, snareNoise, snareBody, hat, hatHP, bass, sub, lead, pad, padFilter, drumLoop;
 
 // 取第 s 步当前生效的贝斯根音（向前回溯到最近的非空），用于 pad 跟和声
 function bassRootAt(M, s) {
@@ -47,33 +50,50 @@ export async function initAudio() {
   tickSynth = new Tone.NoiseSynth({ noise: { type: 'white' }, envelope: { attack: 0.001, decay: 0.03, sustain: 0 } }).connect(sfxBus); tickSynth.volume.value = -22;
 
   // ---------- 背景乐主控链：bgmBus → EQ3 → 压缩器 → 限幅器 ----------
-  bgmComp = new Tone.Compressor({ threshold: -20, ratio: 3, attack: 0.005, release: 0.15 }).connect(limiter);
-  bgmEq = new Tone.EQ3({ low: 3, mid: -1, high: 2, lowFrequency: 180, highFrequency: 3200 }).connect(bgmComp);
-  bgmBus = new Tone.Gain(0.7).connect(bgmEq);              // bgm 总音量/开关/闪避都作用在这里
+  // 压缩更狠（阈值更低/比率更高），配合推高的 bgmBus 把整体响度顶到限幅，听感更冲。
+  bgmComp = new Tone.Compressor({ threshold: -24, ratio: 4, attack: 0.003, release: 0.12 }).connect(limiter);
+  bgmEq = new Tone.EQ3({ low: 4, mid: -1, high: 2.5, lowFrequency: 180, highFrequency: 3200 }).connect(bgmComp);
+  bgmBus = new Tone.Gain(BGM_LEVEL).connect(bgmEq);        // bgm 总音量/开关/闪避都作用在这里
   bgmReverb = new Tone.Reverb({ decay: 2.0, wet: 1 }).connect(bgmBus); // 混响回流到 bgmBus，随 bgm 一起闪避
   bgmReverbSend = new Tone.Gain(0.18).connect(bgmReverb);  // 各乐器按需送一份到混响
 
-  // ---------- 鼓组（分层，更冲更脆） ----------
-  kick = new Tone.MembraneSynth({ pitchDecay: 0.028, octaves: 7, oscillator: { type: 'sine' }, envelope: { attack: 0.001, decay: 0.34, sustain: 0, release: 0.02 } }).connect(bgmBus); kick.volume.value = -2;
-  snareNoise = new Tone.NoiseSynth({ noise: { type: 'white' }, envelope: { attack: 0.001, decay: 0.14, sustain: 0 } }).connect(bgmBus); snareNoise.volume.value = -13; snareNoise.connect(bgmReverbSend);
-  snareBody = new Tone.Synth({ oscillator: { type: 'triangle' }, envelope: { attack: 0.001, decay: 0.12, sustain: 0, release: 0.02 } }).connect(bgmBus); snareBody.volume.value = -17;
-  hatHP = new Tone.Filter(7000, 'highpass').connect(bgmBus);
-  hat = new Tone.NoiseSynth({ noise: { type: 'white' }, envelope: { attack: 0.001, decay: 0.035, sustain: 0 } }).connect(hatHP); hat.volume.value = -16;
+  // 侧链泵：旋律/贝斯/pad 都汇到这里，每记 kick 把它瞬间压到 0.35 再 0.16s 回弹 →
+  // 经典电子"泵感"，是冲击力最显著的来源。鼓不走这条，保持稳实。
+  pumpGain = new Tone.Gain(1).connect(bgmBus);
+  // 鼓组轻饱和总线：加谐波密度，鼓更有"拳头"；不参与侧链。
+  drumDrive = new Tone.Distortion({ distortion: 0.2, wet: 0.35 }).connect(bgmBus);
 
-  // ---------- 贝斯：带滤波包络的 MonoSynth + 低八度 sub ----------
-  bass = new Tone.MonoSynth({ oscillator: { type: 'sawtooth' }, filter: { Q: 1, type: 'lowpass' }, filterEnvelope: { attack: 0.01, decay: 0.2, sustain: 0.4, release: 0.2, baseFrequency: 120, octaves: 2.6 }, envelope: { attack: 0.02, decay: 0.2, sustain: 0.5, release: 0.2 } }).connect(bgmBus); bass.volume.value = -9;
-  sub = new Tone.Synth({ oscillator: { type: 'sine' }, envelope: { attack: 0.02, decay: 0.2, sustain: 0.6, release: 0.2 } }).connect(bgmBus); sub.volume.value = -12;
+  // ---------- 鼓组（分层 + click 瞬态，更冲更脆） ----------
+  kick = new Tone.MembraneSynth({ pitchDecay: 0.045, octaves: 8, oscillator: { type: 'sine' }, envelope: { attack: 0.001, decay: 0.36, sustain: 0, release: 0.02 } }).connect(drumDrive); kick.volume.value = 0;
+  // 高通噪声短促爆点，叠在 kick 头上给"咔"的瞬态冲击，小音箱也能感到拳头
+  kickClickHP = new Tone.Filter(2200, 'highpass').connect(drumDrive);
+  kickClick = new Tone.NoiseSynth({ noise: { type: 'white' }, envelope: { attack: 0.0005, decay: 0.018, sustain: 0 } }).connect(kickClickHP); kickClick.volume.value = -13;
+  snareNoise = new Tone.NoiseSynth({ noise: { type: 'white' }, envelope: { attack: 0.001, decay: 0.14, sustain: 0 } }).connect(drumDrive); snareNoise.volume.value = -11; snareNoise.connect(bgmReverbSend);
+  snareBody = new Tone.Synth({ oscillator: { type: 'triangle' }, envelope: { attack: 0.001, decay: 0.12, sustain: 0, release: 0.02 } }).connect(drumDrive); snareBody.volume.value = -15;
+  hatHP = new Tone.Filter(7000, 'highpass').connect(drumDrive);
+  hat = new Tone.NoiseSynth({ noise: { type: 'white' }, envelope: { attack: 0.001, decay: 0.035, sustain: 0 } }).connect(hatHP); hat.volume.value = -14;
 
-  // ---------- 旋律 + 铺底 pad（补满空隙） ----------
-  lead = new Tone.Synth({ oscillator: { type: 'fatsquare', count: 2, spread: 18 }, envelope: { attack: 0.01, decay: 0.12, sustain: 0.12, release: 0.12 } }).connect(bgmBus); lead.volume.value = -14; lead.connect(bgmReverbSend);
-  padFilter = new Tone.Filter(1200, 'lowpass').connect(bgmBus); padFilter.connect(bgmReverbSend);
-  pad = new Tone.PolySynth(Tone.Synth).connect(padFilter); pad.volume.value = -23;
+  // ---------- 贝斯：带滤波包络的 MonoSynth + 低八度 sub（走侧链泵） ----------
+  bass = new Tone.MonoSynth({ oscillator: { type: 'sawtooth' }, filter: { Q: 1, type: 'lowpass' }, filterEnvelope: { attack: 0.01, decay: 0.2, sustain: 0.4, release: 0.2, baseFrequency: 120, octaves: 2.6 }, envelope: { attack: 0.02, decay: 0.2, sustain: 0.5, release: 0.2 } }).connect(pumpGain); bass.volume.value = -7;
+  sub = new Tone.Synth({ oscillator: { type: 'sine' }, envelope: { attack: 0.02, decay: 0.2, sustain: 0.6, release: 0.2 } }).connect(pumpGain); sub.volume.value = -11;
+
+  // ---------- 旋律 + 铺底 pad（走侧链泵，补满空隙） ----------
+  lead = new Tone.Synth({ oscillator: { type: 'fatsquare', count: 2, spread: 18 }, envelope: { attack: 0.01, decay: 0.12, sustain: 0.12, release: 0.12 } }).connect(pumpGain); lead.volume.value = -12; lead.connect(bgmReverbSend);
+  padFilter = new Tone.Filter(1200, 'lowpass').connect(pumpGain); padFilter.connect(bgmReverbSend);
+  pad = new Tone.PolySynth(Tone.Synth).connect(padFilter); pad.volume.value = -19;
   pad.set({ oscillator: { type: 'fatsawtooth', count: 2, spread: 20 }, envelope: { attack: 0.4, decay: 0.3, sustain: 0.7, release: 1.2 } });
 
   let step = 0;
   drumLoop = new Tone.Loop((time) => {
     const s = step % 16; const M = MUSIC[game.musicTier];
-    if (M.kick[s]) { kick.triggerAttackRelease('C1', '8n', time); Tone.Draw.schedule(() => { game.beatPulse = 1; }, time); }
+    if (M.kick[s]) {
+      kick.triggerAttackRelease('C1', '8n', time);
+      kickClick.triggerAttackRelease('16n', time, 0.9);
+      // 侧链泵：kick 瞬间把旋律/贝斯/pad 压到 0.35，再 0.16s 回弹到 1 → "泵感"
+      pumpGain.gain.setValueAtTime(0.35, time);
+      pumpGain.gain.rampTo(1, 0.16, time);
+      Tone.Draw.schedule(() => { game.beatPulse = 1; }, time);
+    }
     if (M.snare[s]) { snareNoise.triggerAttackRelease('16n', time); snareBody.triggerAttackRelease('G3', '16n', time, 0.7); }
     if (M.hat[s]) hat.triggerAttackRelease('32n', time, M.tier >= 3 ? 0.8 : 0.5);
     if (M.bass && M.bass[s]) { bass.triggerAttackRelease(M.bass[s], '8n', time); sub.triggerAttackRelease(semis(M.bass[s], -12), '8n', time); }
@@ -94,12 +114,12 @@ export function startBgm() {
   if (!audio.ready) return;
   Tone.Transport.bpm.value = MUSIC[game.musicTier].bpm; Tone.Transport.start();
   if (audio.bgmOn && drumLoop.state !== 'started') drumLoop.start(0);
-  bgmBus.gain.rampTo(audio.bgmOn ? 0.7 : 0, 0.4);
+  bgmBus.gain.rampTo(audio.bgmOn ? BGM_LEVEL : 0, 0.4);
 }
 
 export function setBgm(on) {
   audio.bgmOn = on;
-  if (audio.ready && bgmBus) bgmBus.gain.rampTo(on ? 0.7 : 0, 0.3);
+  if (audio.ready && bgmBus) bgmBus.gain.rampTo(on ? BGM_LEVEL : 0, 0.3);
 }
 
 export function setSfx(on) { audio.sfxOn = on; }

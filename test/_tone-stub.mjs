@@ -20,6 +20,6 @@ globalThis.Tone = {
   Draw: { schedule: () => {} },
   Transport: { bpm: { value: 0, rampTo() {}, setValueAtTime() {} }, start() {}, stop() {} },
   Frequency: () => ({ toFrequency: () => 440, transpose: () => ({ toNote: () => 'C2' }) }),
-  Limiter: ctor, Compressor: ctor, EQ3: ctor, Gain: ctor, Reverb: ctor, Filter: ctor,
+  Limiter: ctor, Compressor: ctor, EQ3: ctor, Gain: ctor, Reverb: ctor, Filter: ctor, Distortion: ctor,
   MembraneSynth: ctor, NoiseSynth: ctor, Synth: ctor, MonoSynth: ctor, PolySynth: ctor, Loop: ctor,
 };
