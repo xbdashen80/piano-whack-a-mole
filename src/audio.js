@@ -196,6 +196,15 @@ export function sfxTick() {
   if (!audio.sfxOn || !audio.ready) return;
   safe(() => { const t = sfxBase(); tickSynth.triggerAttackRelease('64n', t, 0.5); bump(t); });
 }
+// 金鼠命中的一记明亮 sparkle，区别于普通命中
+export function sfxGold() {
+  if (!audio.sfxOn || !audio.ready) return;
+  safe(() => {
+    const notes = ['G5', 'C6', 'E6', 'G6']; const t = sfxBase();
+    notes.forEach((n, i) => arpSynth.triggerAttackRelease(n, '32n', t + i * 0.05, 0.9));
+    tickSynth.triggerAttackRelease('32n', t + 0.02, 0.5); bump(t + notes.length * 0.05);
+  });
+}
 // 进入狂热的一记上行 riser，宣告高潮
 export function sfxFever() {
   if (!audio.sfxOn || !audio.ready) return;

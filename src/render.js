@@ -4,6 +4,8 @@ import { ctx, view, game, kb, flashMap, particles, ripples, popups, keyFor, colF
 import { midiName, FINGER_COLORS } from './levels.js';
 import { drawBear } from './bear.js';
 
+const GOLD_PAL = ['#FFD166', '#FFF1B8']; // 金鼠调色板
+
 // 命中特效：爆粒子 + 扩散水波
 export function fx(cx, cy, pal, big) {
   // 连击越高，爆得越多越散 → 画面越"热"
@@ -95,11 +97,15 @@ export function draw(now) {
   if (game.running || game.breaking) drawBear(now);
   if (game.running) {
     game.moles.forEach((m, mi) => {
-      const k = keyFor(m.midi); if (!k) return; const pal = colFor(m.midi);
+      const k = keyFor(m.midi); if (!k) return; const pal = m.gold ? GOLD_PAL : colFor(m.midi);
       // 必须按出现顺序敲：moles[0] 是最早出现=当前目标(高亮)，其余变暗表示"还没轮到"
       const isNext = mi === 0; const a = isNext ? 1 : 0.34;
       // 半径随节拍脉冲涨缩：强拍时目标圈"涨"一下，给玩家预判踩点的视觉锚（P2）
       const left = 1 - (now - m.born) / m.ttl; const cy = kb.keyTop - 95; const R = Math.min(k.w * 0.4, 52) * (1 + game.beatPulse * 0.12);
+      if (m.gold) { // 金鼠：一圈脉冲金色光晕，"贵气"更打眼
+        ctx.globalAlpha = (0.35 + 0.3 * Math.abs(Math.sin(now / 150))) * a;
+        ctx.beginPath(); ctx.arc(k.cx, cy, R + 16, 0, 7); ctx.strokeStyle = '#FFD166'; ctx.lineWidth = 8; ctx.stroke(); ctx.globalAlpha = 1;
+      }
       if (isNext) { // 当前目标加一道脉冲白环，明确"先敲这个"
         ctx.globalAlpha = 0.45 + 0.3 * Math.abs(Math.sin(now / 180));
         ctx.beginPath(); ctx.arc(k.cx, cy, R + 9, 0, 7); ctx.strokeStyle = '#fff'; ctx.lineWidth = 3; ctx.stroke(); ctx.globalAlpha = 1;
@@ -109,10 +115,11 @@ export function draw(now) {
       ctx.strokeStyle = left < 0.3 ? '#FF8585' : pal[0]; ctx.lineWidth = 6; ctx.lineCap = 'round'; ctx.stroke();
       ctx.beginPath(); ctx.arc(k.cx, cy, R * 0.62, 0, 7); ctx.fillStyle = pal[0]; ctx.globalAlpha = 0.85 * a; ctx.fill();
       ctx.globalAlpha = a;
-      ctx.fillStyle = '#fff'; ctx.font = 'bold 20px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillStyle = m.gold ? '#5a4a14' : '#fff'; ctx.font = 'bold 20px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.fillText(midiName(m.midi), k.cx, cy - 6);
       ctx.fillStyle = FINGER_COLORS[k.finger]; ctx.beginPath(); ctx.arc(k.cx, cy + 16, 11, 0, 7); ctx.fill();
       ctx.fillStyle = '#1a1a22'; ctx.font = 'bold 14px sans-serif'; ctx.fillText(k.finger, k.cx, cy + 16);
+      if (m.gold) { ctx.fillStyle = '#FFD166'; ctx.font = 'bold 18px sans-serif'; ctx.fillText('★', k.cx, cy - R - 6); }
       ctx.globalAlpha = 1; ctx.textBaseline = 'alphabetic';
     });
   }

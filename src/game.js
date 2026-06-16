@@ -1,7 +1,7 @@
 // ================= 主循环 + 状态机 + 判定 + 计分 + 过关/失败 =================
 import { game, bear, particles, ripples, popups, flashMap, prog, persist, layoutKeys, keyFor, colFor, kb, view } from './state.js';
 import { LEVELS } from './levels.js';
-import { initAudio, setMusicTier, startBgm, sfxHit, sfxCombo, sfxMiss, sfxLevel, sfxTick, sfxFever, duckBgm } from './audio.js';
+import { initAudio, setMusicTier, startBgm, sfxHit, sfxCombo, sfxMiss, sfxLevel, sfxTick, sfxFever, sfxGold, duckBgm } from './audio.js';
 import { fx, draw } from './render.js';
 import { applySink, decayAnim } from './bear.js';
 import { on } from './events.js';
@@ -28,7 +28,8 @@ function spawnMole() {
     if (game.moles.length >= curMaxActive()) return;
     const busy = game.moles.map(m => m.midi); const avail = kb.activeKeyMidis.filter(m => !busy.includes(m));
     if (!avail.length) return; const midi = avail[Math.floor(Math.random() * avail.length)];
-    game.moles.push({ midi, born: performance.now(), ttl: LEVELS[game.curLevel].ttl, ticked: false }); game.lastMoleTime = performance.now();
+    const gold = Math.random() < 0.25; // 金鼠：约四分之一概率出现，分高、蓄狂热猛、金光
+    game.moles.push({ midi, born: performance.now(), ttl: LEVELS[game.curLevel].ttl, ticked: false, gold }); game.lastMoleTime = performance.now();
   } catch (e) { logErr('spawnMole', e); }
 }
 
@@ -58,14 +59,16 @@ function press(midi, vel) {
       // 踩点奖励：恰好敲在鼓点附近(±110ms)额外加分 + 金色大特效；判定其余不变(偏拍照常命中)
       const onBeat = offBeatMs(now) < 110;
       game.combo++;
-      const gain = ((perfect ? 15 : 10) + game.combo * 2 + (onBeat ? 8 : 0)) * (game.fever ? 2 : 1); game.score += gain;
-      sfxHit(midi, perfect, game.combo); if (k) fx(k.cx, kb.keyTop, (onBeat || game.fever) ? GOLD : colFor(midi), perfect || onBeat || game.fever);
-      addFever(0.07 + (perfect ? 0.02 : 0) + (onBeat ? 0.03 : 0) + Math.min(game.combo, 25) * 0.003); // 蓄狂热槽：连击越高填越快
-      // 打击感：震屏(踩点/perfect/高连击更狠) + 分数弹字 + 连击脉冲
-      const big = perfect || onBeat;
+      const goldHit = m.gold; // 金鼠：分数×5
+      const gain = ((perfect ? 15 : 10) + game.combo * 2 + (onBeat ? 8 : 0)) * (game.fever ? 2 : 1) * (goldHit ? 5 : 1); game.score += gain;
+      sfxHit(midi, perfect, game.combo); if (goldHit) { sfxGold(); game.impactFlash = Math.max(game.impactFlash, 0.7); } // 金鼠爆一下闪光，更有"中大奖"感
+      if (k) fx(k.cx, kb.keyTop, (goldHit || onBeat || game.fever) ? GOLD : colFor(midi), goldHit || perfect || onBeat || game.fever);
+      addFever(0.07 + (perfect ? 0.02 : 0) + (onBeat ? 0.03 : 0) + Math.min(game.combo, 25) * 0.003 + (goldHit ? 0.2 : 0)); // 蓄狂热槽：连击越高填越快，金鼠额外猛涨
+      // 打击感：震屏(踩点/perfect/金鼠/高连击更狠) + 分数弹字 + 连击脉冲
+      const big = perfect || onBeat || goldHit;
       game.shake = Math.min(13, game.shake + (big ? 7 : 4) + Math.min(game.combo, 20) * 0.25);
       game.comboFlash = 1;
-      popups.push({ x: k ? k.cx : view.W / 2, y: kb.keyTop - 110, text: '+' + gain, color: (onBeat || game.fever) ? '#FFD166' : (perfect ? '#9DE5B5' : '#FFFFFF'), life: 1, vy: -1.7, scale: big || game.fever ? 1.35 : 1 });
+      popups.push({ x: k ? k.cx : view.W / 2, y: kb.keyTop - 110, text: '+' + gain, color: (goldHit || onBeat || game.fever) ? '#FFD166' : (perfect ? '#9DE5B5' : '#FFFFFF'), life: 1, vy: -1.7, scale: big || game.fever ? 1.35 : 1 });
       const L = LEVELS[game.curLevel];
       bear.pos = Math.max(0.04, bear.pos - L.bounce * 0.6);
       bear.vel = -(L.bounce * 0.5 * (perfect ? 1.3 : 1));
