@@ -94,9 +94,10 @@ for (let f = 0; f < TOTAL; f++) {
   // 统计真实生成次数（spawnMole 会更新 lastMoleTime）
   if (game.lastMoleTime !== prevLMT) { totalSpawns++; prevLMT = game.lastMoleTime; activeSinceSpawn = 0; }
 
-  // 自动连打：把当前所有活动地鼠按掉（偶尔漏一个）
+  // 自动连打：把当前所有活动地鼠按掉（偶尔漏一个）。好玩家会避开炸弹鼠(让它自己消失)。
   if (game.running && !game.paused) {
     for (const m of [...game.moles]) {
+      if (m.bomb) continue;
       if (rnd() < 0.92) { emit('press', m.midi, 0.8); ev('press'); }
     }
   }

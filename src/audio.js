@@ -20,7 +20,7 @@ function bump(t) { if (t > sfxClock) sfxClock = t; }
 function safe(fn) { try { fn(); } catch (e) { logErr('audio', e); } }
 
 // 音效链
-let hitSynth, hitSynth2, arpSynth, loseSynth, tickSynth, sfxReverb, sfxBus;
+let hitSynth, hitSynth2, arpSynth, loseSynth, tickSynth, sfxReverb, sfxBus, boomNoise, boomFilter, boomDrive, boomSub;
 // 背景乐：主控链 + 鼓组分层 + 贝斯/sub + 旋律 + 铺底 pad
 let limiter, bgmComp, bgmEq, bgmBus, bgmReverb, bgmReverbSend, pumpGain, drumDrive;
 let kick, kickClick, kickClickHP, snareNoise, snareBody, hat, hatHP, bass, sub, lead, pad, padFilter, drumLoop;
@@ -49,6 +49,11 @@ export async function initAudio() {
   arpSynth = new Tone.Synth({ oscillator: { type: 'square' }, envelope: { attack: 0.001, decay: 0.1, sustain: 0.05, release: 0.1 } }).connect(sfxBus); arpSynth.volume.value = -7;
   loseSynth = new Tone.Synth({ oscillator: { type: 'sawtooth' }, envelope: { attack: 0.002, decay: 0.25, sustain: 0, release: 0.1 } }).connect(sfxBus); loseSynth.volume.value = -8;
   tickSynth = new Tone.NoiseSynth({ noise: { type: 'white' }, envelope: { attack: 0.001, decay: 0.03, sustain: 0 } }).connect(sfxBus); tickSynth.volume.value = -22;
+  // 炸弹爆炸：棕噪经失真+低通=带颗粒的轰鸣，再叠一层低频 sub 增加胸腔冲击
+  boomFilter = new Tone.Filter(1100, 'lowpass').connect(sfxBus);
+  boomDrive = new Tone.Distortion({ distortion: 0.6, wet: 0.7 }).connect(boomFilter);
+  boomNoise = new Tone.NoiseSynth({ noise: { type: 'brown' }, envelope: { attack: 0.001, decay: 0.7, sustain: 0 } }).connect(boomDrive); boomNoise.volume.value = 2;
+  boomSub = new Tone.Synth({ oscillator: { type: 'sine' }, envelope: { attack: 0.002, decay: 0.55, sustain: 0, release: 0.1 } }).connect(sfxBus); boomSub.volume.value = -2;
 
   // ---------- 背景乐主控链：bgmBus → EQ3 → 压缩器 → 限幅器 ----------
   // 压缩更狠（阈值更低/比率更高），配合推高的 bgmBus 把整体响度顶到限幅，听感更冲。
@@ -196,6 +201,17 @@ export function sfxTick() {
   if (!audio.sfxOn || !audio.ready) return;
   safe(() => { const t = sfxBase(); tickSynth.triggerAttackRelease('64n', t, 0.5); bump(t); });
 }
+// 敲到炸弹的一记震撼爆响：颗粒轰鸣 + 低频 sub 胸腔冲击 + 下坠 + 爆点
+export function sfxBomb() {
+  if (!audio.sfxOn || !audio.ready) return;
+  safe(() => {
+    const t = sfxBase();
+    boomNoise.triggerAttackRelease('1n', t, 1);                 // 颗粒轰鸣
+    boomSub.triggerAttackRelease('C1', '2n', t, 1); boomSub.frequency.setValueAtTime('C2', t); boomSub.frequency.rampTo('C0', 0.5); // 低频下坠胸腔感
+    loseSynth.triggerAttackRelease('C2', '2n', t); loseSynth.frequency.setValueAtTime('C2', t); loseSynth.frequency.rampTo('C0', 0.5);
+    tickSynth.triggerAttackRelease('8n', t, 1); bump(t + 0.12); // 起爆脆点
+  });
+}
 // 金鼠命中的一记明亮 sparkle，区别于普通命中
 export function sfxGold() {
   if (!audio.sfxOn || !audio.ready) return;
@@ -203,6 +219,16 @@ export function sfxGold() {
     const notes = ['G5', 'C6', 'E6', 'G6']; const t = sfxBase();
     notes.forEach((n, i) => arpSynth.triggerAttackRelease(n, '32n', t + i * 0.05, 0.9));
     tickSynth.triggerAttackRelease('32n', t + 0.02, 0.5); bump(t + notes.length * 0.05);
+  });
+}
+// 结束/失败的一记下行 doom 收尾（淹水/炸弹通用）
+export function sfxGameOver() {
+  if (!audio.sfxOn || !audio.ready) return;
+  safe(() => {
+    const notes = ['G4', 'Eb4', 'C4', 'G3']; const t = sfxBase();
+    notes.forEach((n, i) => loseSynth.triggerAttackRelease(n, '8n', t + i * 0.16, 0.9));
+    boomSub && boomSub.triggerAttackRelease('C2', '1n', t + 0.1, 0.8);
+    bump(t + notes.length * 0.16 + 0.1);
   });
 }
 // 进入狂热的一记上行 riser，宣告高潮

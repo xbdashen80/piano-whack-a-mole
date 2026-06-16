@@ -1,7 +1,7 @@
 // ================= 共享状态中枢 =================
 // 集中持有：画布引用、视口尺寸、存档、可变游戏状态、键盘几何。
 // 其它模块都从这里读写状态，以此打破彼此的循环依赖。
-import { LEVELS, WHITE, palettes, fingerFor } from './levels.js';
+import { LEVELS, palettes, fingerFor, activeMidis } from './levels.js';
 
 export const canvas = document.getElementById('canvas');
 export const ctx = canvas.getContext('2d');
@@ -38,6 +38,8 @@ export const game = {
   shake: 0,        // 震屏强度(px)，draw 里随机位移、tick 里衰减
   comboFlash: 0,   // 连击数字打击脉冲(命中=1)，驱动中央大连击数字的缩放
   impactFlash: 0,  // 全屏白闪(连击里程碑时爆一下)
+  bombFlash: 0,    // 全屏红闪(敲到炸弹时爆一下)
+  hitStop: 0,      // 命中顿帧剩余 ms(敲到炸弹瞬间定格猛抖，制造冲击)
   // ---- 狂热 Fever 模式 ----
   feverGauge: 0,   // 狂热槽 0..1，命中蓄、失误掉、闲置缓落
   fever: false,    // 是否处于狂热(分数×2/更密/音乐更炸/金光)
@@ -57,12 +59,12 @@ export const kb = { keys: [], keyTop: 0, keyH: 0, activeKeyMidis: [] };
 
 export function layoutKeys() {
   kb.keys = [];
-  const n = LEVELS[game.curLevel].keys;
-  kb.activeKeyMidis = WHITE.slice(0, n);
+  const L = LEVELS[game.curLevel]; const n = L.keys;
+  kb.activeKeyMidis = activeMidis(L); // 按把位偏移取活动键窗口
   kb.keyH = Math.min(230, view.H * 0.34);
   kb.keyTop = view.H - kb.keyH;
   const ww = view.W / n;
-  kb.activeKeyMidis.forEach((m, i) => kb.keys.push({ midi: m, x: i * ww, w: ww, cx: i * ww + ww / 2, finger: fingerFor(i) }));
+  kb.activeKeyMidis.forEach((m, i) => kb.keys.push({ midi: m, x: i * ww, w: ww, cx: i * ww + ww / 2, finger: fingerFor(i, n) }));
 }
 
 export function keyFor(m) { return kb.keys.find(k => k.midi === m); }

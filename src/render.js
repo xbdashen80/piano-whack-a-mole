@@ -18,6 +18,18 @@ export function fx(cx, cy, pal, big) {
   ripples.push({ x: cx, y: cy, r: 6, max: (big ? 140 : 80) + boost * 3, life: 1, color: pal[0] });
 }
 
+// 炸弹大爆炸：一大团火花/碎片 + 多重冲击波（比普通命中猛得多）
+export function fxBoom(cx, cy) {
+  const cols = ['#FF3B3B', '#FF8C42', '#FFD166', '#FFFFFF', '#5a5a5a', '#2b2b33'];
+  for (let i = 0; i < 80; i++) {
+    const a = Math.random() * Math.PI * 2, sp = 4 + Math.random() * 18;
+    particles.push({ x: cx, y: cy, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 2, r: 3 + Math.random() * 8, life: 1, color: cols[(Math.random() * cols.length) | 0] });
+  }
+  ripples.push({ x: cx, y: cy, r: 16, max: 380, life: 1, color: '#FF4D4D' });
+  ripples.push({ x: cx, y: cy, r: 10, max: 280, life: 1, color: '#FFD166' });
+  ripples.push({ x: cx, y: cy, r: 6, max: 180, life: 1, color: '#FFFFFF' });
+}
+
 // 连击热度配色：越高越烫(暖→橙→红→品红)
 function comboRGB(c) {
   if (c >= 30) return '255,80,160';
@@ -69,6 +81,7 @@ function drawOverlays(now) {
   }
   ctx.globalAlpha = 1; ctx.textBaseline = 'alphabetic';
   if (game.impactFlash > 0.01) { ctx.fillStyle = `rgba(255,255,255,${game.impactFlash * 0.22})`; ctx.fillRect(0, 0, view.W, view.H); }
+  if (game.bombFlash > 0.01) { ctx.fillStyle = `rgba(255,30,30,${Math.min(0.78, game.bombFlash * 0.78)})`; ctx.fillRect(0, 0, view.W, view.H); } // 敲到炸弹：强烈红闪
 }
 
 function drawHand(x, y, scale) {
@@ -96,12 +109,23 @@ export function draw(now) {
   kb.keys.forEach(k => { ctx.beginPath(); ctx.moveTo(k.x, 0); ctx.lineTo(k.x, kb.keyTop); ctx.stroke(); });
   if (game.running || game.breaking) drawBear(now);
   if (game.running) {
+    // 当前目标 = 最早出现的"非炸弹"地鼠（炸弹不进顺序队列，是独立躲避物）
+    const tIdx = game.moles.findIndex(m => !m.bomb); const targetMidi = tIdx >= 0 ? game.moles[tIdx].midi : null;
     game.moles.forEach((m, mi) => {
-      const k = keyFor(m.midi); if (!k) return; const pal = m.gold ? GOLD_PAL : colFor(m.midi);
-      // 必须按出现顺序敲：moles[0] 是最早出现=当前目标(高亮)，其余变暗表示"还没轮到"
-      const isNext = mi === 0; const a = isNext ? 1 : 0.34;
-      // 半径随节拍脉冲涨缩：强拍时目标圈"涨"一下，给玩家预判踩点的视觉锚（P2）
-      const left = 1 - (now - m.born) / m.ttl; const cy = kb.keyTop - 95; const R = Math.min(k.w * 0.4, 52) * (1 + game.beatPulse * 0.12);
+      const k = keyFor(m.midi); if (!k) return;
+      const cy = kb.keyTop - 95; const R = Math.min(k.w * 0.4, 52) * (1 + game.beatPulse * 0.12);
+      const left = 1 - (now - m.born) / m.ttl; // 倒计时（半径随节拍脉冲涨缩，P2 视觉锚）
+      if (m.bomb) { // 炸弹鼠：深色弹体 + 红色危险环 + 💣，全程醒目（别敲）
+        const dp = 0.6 + 0.4 * Math.abs(Math.sin(now / 130));
+        ctx.globalAlpha = dp; ctx.beginPath(); ctx.arc(k.cx, cy, R + 7, 0, 7); ctx.strokeStyle = '#FF4D4D'; ctx.lineWidth = 5; ctx.stroke();
+        ctx.globalAlpha = 1; ctx.beginPath(); ctx.arc(k.cx, cy, R * 0.7, 0, 7); ctx.fillStyle = '#2b2b33'; ctx.fill();
+        ctx.font = 'bold 26px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('💣', k.cx, cy - 2);
+        ctx.fillStyle = FINGER_COLORS[k.finger]; ctx.beginPath(); ctx.arc(k.cx, cy + 18, 10, 0, 7); ctx.fill();
+        ctx.fillStyle = '#1a1a22'; ctx.font = 'bold 13px sans-serif'; ctx.fillText(k.finger, k.cx, cy + 18);
+        ctx.textBaseline = 'alphabetic'; return;
+      }
+      const pal = m.gold ? GOLD_PAL : colFor(m.midi);
+      const isNext = m.midi === targetMidi; const a = isNext ? 1 : 0.34; // 当前目标高亮，其余变暗
       if (m.gold) { // 金鼠：一圈脉冲金色光晕，"贵气"更打眼
         ctx.globalAlpha = (0.35 + 0.3 * Math.abs(Math.sin(now / 150))) * a;
         ctx.beginPath(); ctx.arc(k.cx, cy, R + 16, 0, 7); ctx.strokeStyle = '#FFD166'; ctx.lineWidth = 8; ctx.stroke(); ctx.globalAlpha = 1;
@@ -125,8 +149,10 @@ export function draw(now) {
   }
   kb.keys.forEach(k => {
     const lit = flashMap[k.midi] > now;
-    const isTarget = game.running && game.moles.length > 0 && game.moles[0].midi === k.midi; // 仅当前目标键亮黄
-    ctx.fillStyle = lit ? '#9DE5B5' : (isTarget ? '#FFE9B0' : '#f4f4f8');
+    const onKey = game.running ? game.moles.find(m => m.midi === k.midi) : null;
+    const isBomb = onKey && onKey.bomb;                      // 炸弹键标红警示"别按"
+    const isTarget = !isBomb && game.running && game.moles.some(m => !m.bomb) && game.moles.find(m => !m.bomb).midi === k.midi;
+    ctx.fillStyle = lit ? '#9DE5B5' : (isBomb ? '#FFB3B3' : (isTarget ? '#FFE9B0' : '#f4f4f8'));
     ctx.fillRect(k.x + 1, kb.keyTop, k.w - 2, kb.keyH); ctx.strokeStyle = 'rgba(0,0,0,0.25)'; ctx.lineWidth = 1; ctx.strokeRect(k.x + 1, kb.keyTop, k.w - 2, kb.keyH);
     ctx.fillStyle = FINGER_COLORS[k.finger]; ctx.beginPath(); ctx.arc(k.cx, kb.keyTop + kb.keyH - 44, 12, 0, 7); ctx.fill();
     ctx.fillStyle = '#1a1a22'; ctx.font = 'bold 14px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';

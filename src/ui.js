@@ -1,6 +1,6 @@
 // ================= DOM/HUD：进度条、Toast、结算页、选关、开始界面、按钮 =================
 import { game, prog, layoutKeys } from './state.js';
-import { LEVELS, MUSIC_NAMES, WHITE, fingerFor, midiName, FINGER_COLORS } from './levels.js';
+import { LEVELS, MUSIC_NAMES, fingerFor, midiName, FINGER_COLORS, activeMidis } from './levels.js';
 import { setBgm, setSfx } from './audio.js';
 import { emit } from './events.js';
 
@@ -31,9 +31,9 @@ export function markMidiConnected() {
 
 export function renderKbPreview() {
   const wrap = $('kbPreview'); if (!wrap) return; wrap.innerHTML = '';
-  const n = LEVELS[game.curLevel].keys;
-  WHITE.slice(0, n).forEach((m, i) => {
-    const f = fingerFor(i); const key = document.createElement('div');
+  const L = LEVELS[game.curLevel]; const n = L.keys;
+  activeMidis(L).forEach((m, i) => {
+    const f = fingerFor(i, n); const key = document.createElement('div');
     key.style.cssText = 'width:34px;height:74px;background:#f4f4f8;border-radius:0 0 5px 5px;border:1px solid rgba(0,0,0,0.2);display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:3px;padding-bottom:5px;';
     key.innerHTML = `<span style="width:18px;height:18px;border-radius:50%;background:${FINGER_COLORS[f]};color:#1a1a22;font-weight:700;font-size:11px;display:flex;align-items:center;justify-content:center;">${f}</span><span style="color:rgba(40,40,60,0.7);font-size:12px;">${midiName(m)}</span>`;
     wrap.appendChild(key);

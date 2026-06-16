@@ -1,8 +1,8 @@
 // ================= 主循环 + 状态机 + 判定 + 计分 + 过关/失败 =================
 import { game, bear, particles, ripples, popups, flashMap, prog, persist, layoutKeys, keyFor, colFor, kb, view } from './state.js';
 import { LEVELS } from './levels.js';
-import { initAudio, setMusicTier, startBgm, sfxHit, sfxCombo, sfxMiss, sfxLevel, sfxTick, sfxFever, sfxGold, duckBgm } from './audio.js';
-import { fx, draw } from './render.js';
+import { initAudio, setMusicTier, startBgm, sfxHit, sfxCombo, sfxMiss, sfxLevel, sfxTick, sfxFever, sfxGold, sfxBomb, sfxGameOver, duckBgm } from './audio.js';
+import { fx, fxBoom, draw } from './render.js';
 import { applySink, decayAnim } from './bear.js';
 import { on } from './events.js';
 import { logErr, spawnWatchdog } from './diagnostics.js';
@@ -11,6 +11,7 @@ import * as ui from './ui.js';
 const flash = m => { flashMap[m] = performance.now() + 150; };
 const GOLD = ['#FFD166', '#FFE9A8']; // 踩中鼓点的金色特效调色板
 let advancing = false; // 过关进下一关时为真：让狂热槽跨关累积，不被 startGame 清零
+const BOMB_FROM_LEVEL = 20; // 0 基：进阶·穿指轨(第21关)起才出炸弹——五指位主体全程无炸弹，纯练习
 
 // 当前时刻离最近一拍有多近(ms)；用于踩点奖励。无拍源(beatMs=0)时返回极大值=永不踩中。
 function offBeatMs(now) {
@@ -28,8 +29,12 @@ function spawnMole() {
     if (game.moles.length >= curMaxActive()) return;
     const busy = game.moles.map(m => m.midi); const avail = kb.activeKeyMidis.filter(m => !busy.includes(m));
     if (!avail.length) return; const midi = avail[Math.floor(Math.random() * avail.length)];
-    const gold = Math.random() < 0.25; // 金鼠：约四分之一概率出现，分高、蓄狂热猛、金光
-    game.moles.push({ midi, born: performance.now(), ttl: LEVELS[game.curLevel].ttl, ticked: false, gold }); game.lastMoleTime = performance.now();
+    // 炸弹致命：仅后段(关卡≥下限)、且场上已有可敲的非炸弹地鼠时才放 10%——前期纯练习无炸弹，
+    // 且保证炸弹出现时玩家总有安全目标(不会无键可按)。金鼠 25%（独立掷骰）。
+    const bomb = game.curLevel >= BOMB_FROM_LEVEL && Math.random() < 0.10 && game.moles.some(m => !m.bomb);
+    const gold = !bomb && Math.random() < 0.25;
+    const ttl = LEVELS[game.curLevel].ttl * (bomb ? 0.7 : 1); // 炸弹 ttl 短些，少占位、减少死等
+    game.moles.push({ midi, born: performance.now(), ttl, ticked: false, gold, bomb }); game.lastMoleTime = performance.now();
   } catch (e) { logErr('spawnMole', e); }
 }
 
@@ -51,10 +56,21 @@ function press(midi, vel) {
     if (!game.running) return; flash(midi);
     const now = performance.now();
     const k = keyFor(midi);
-    // 必须按出现顺序敲：只有最早出现的地鼠(moles[0])可被命中；按错或越级 = 失误
-    const m = game.moles[0];
+    const pressed = game.moles.find(mm => mm.midi === midi);
+    // 炸弹鼠：千万别敲——敲到即 game over（震撼爆炸 + 结束音效）；放着让它自己消失则无事
+    if (pressed && pressed.bomb) {
+      game.moles.splice(game.moles.indexOf(pressed), 1);
+      sfxBomb();
+      // 震撼爆炸：顿帧定格猛抖 + 大团碎片 + 多重冲击波 + 强红闪 + 一记白爆
+      if (k) fxBoom(k.cx, kb.keyTop);
+      game.hitStop = 90; game.shake = 46; game.bombFlash = 1; game.impactFlash = Math.max(game.impactFlash, 0.9);
+      popups.push({ x: k ? k.cx : view.W / 2, y: kb.keyTop - 120, text: '💥 炸弹!', color: '#FF5252', life: 1.3, vy: -1.6, scale: 2.3 });
+      gameOver(); return;
+    }
+    // 必须按出现顺序敲：当前目标 = 最早出现的"非炸弹"地鼠；按错或越级 = 失误
+    const ti = game.moles.findIndex(mm => !mm.bomb); const m = ti >= 0 ? game.moles[ti] : null;
     if (m && m.midi === midi) {
-      game.moles.shift();
+      game.moles.splice(ti, 1);
       const ratio = (now - m.born) / m.ttl; const perfect = ratio < 0.5;
       // 踩点奖励：恰好敲在鼓点附近(±110ms)额外加分 + 金色大特效；判定其余不变(偏拍照常命中)
       const onBeat = offBeatMs(now) < 110;
@@ -76,8 +92,8 @@ function press(midi, vel) {
       if (game.combo > 0 && game.combo % 10 === 0) { ui.showToast('🔥 ' + game.combo + ' 连击！', '#FF6B9D'); sfxCombo(); bear.pos = Math.max(0.04, bear.pos - 0.1); game.shake = 16; game.impactFlash = 1; }
       checkPass();
     } else {
-      // 越级：按的键对应一个还没轮到的地鼠 → 提示"按顺序"；否则就是普通按空
-      const outOfOrder = game.moles.some(mm => mm.midi === midi);
+      // 越级：按的键对应一个还没轮到的(非炸弹)地鼠 → 提示"按顺序"；否则就是普通按空
+      const outOfOrder = !!pressed; // 走到这里 pressed 必为非炸弹、且非当前目标
       game.combo = 0; hurtBear(); if (k) fx(k.cx, kb.keyTop, ['#888', '#aaa'], false); sfxMiss();
       game.shake = Math.min(10, game.shake + 5); game.feverGauge *= 0.6;
       popups.push({ x: k ? k.cx : view.W / 2, y: kb.keyTop - 100, text: outOfOrder ? '按顺序!' : 'Miss', color: outOfOrder ? '#FFC371' : '#FF8585', life: 1, vy: -1.2, scale: 1 });
@@ -105,12 +121,15 @@ function onBeat(beatMs, strong) {
 function tick(now) {
   try {
     const dt = game.lastTickTime ? Math.min(0.05, (now - game.lastTickTime) / 1000) : 0.016; game.lastTickTime = now;
+    // 命中顿帧：定格游戏逻辑(不沉、不生成)，但仍重绘——震屏每帧随机偏移=原地猛抖，闪光保持，冲击力拉满
+    if (game.hitStop > 0) { game.hitStop -= dt * 1000; draw(now); requestAnimationFrame(tick); return; }
     game.waterPhase += dt * 1.5;
     if (game.beatPulse > 0) game.beatPulse *= 0.88;
     // 打击感瞬时量衰减
     if (game.shake > 0.1) game.shake *= 0.85; else game.shake = 0;
     if (game.comboFlash > 0.01) game.comboFlash *= 0.86; else game.comboFlash = 0;
     if (game.impactFlash > 0.01) game.impactFlash *= 0.82; else game.impactFlash = 0;
+    if (game.bombFlash > 0.01) game.bombFlash *= 0.88; else game.bombFlash = 0;
     if (game.running && !game.paused) applySink(dt);
     decayAnim();
     if (game.running && !game.paused) {
@@ -132,8 +151,8 @@ function tick(now) {
       if (game.moles.length === 0 && now - game.lastMoleTime > L.spawn[1] * 1.5) { spawnMole(); game.nextSpawn = now + L.spawn[0]; }
       for (let i = game.moles.length - 1; i >= 0; i--) {
         const m = game.moles[i]; const left = 1 - (now - m.born) / m.ttl;
-        if (!m.ticked && left < 0.3) { m.ticked = true; sfxTick(); }
-        if (now - m.born > m.ttl) { game.moles.splice(i, 1); missTimeout(); }
+        if (!m.bomb && !m.ticked && left < 0.3) { m.ticked = true; sfxTick(); }
+        if (now - m.born > m.ttl) { game.moles.splice(i, 1); if (!m.bomb) missTimeout(); } // 炸弹自己消失=正确躲避，无惩罚
       }
       spawnWatchdog(now, game, L); // 生成停摆时打印现场快照
     }
@@ -167,7 +186,7 @@ function levelClear() {
 function gameOver() {
   game.running = false; ui.exitPlayUI();
   duckBgm(); if (game.score > prog.best) { prog.best = game.score; persist(); }
-  ui.showGameOver();
+  ui.showGameOver(); sfxGameOver();
 }
 
 function pauseToggle() {
