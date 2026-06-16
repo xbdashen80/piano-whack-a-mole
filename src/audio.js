@@ -85,7 +85,19 @@ export async function initAudio() {
 
   let step = 0;
   drumLoop = new Tone.Loop((time) => {
-    const s = step % 16; const M = MUSIC[game.musicTier];
+    const M = MUSIC[game.musicTier];
+    const len = M.kick.length;
+    const s = step % len;               // 乐句内步序（乐句可为多小节，16 的倍数）
+    const bar = Math.floor(step / 16);  // 宏观小节计数：跨乐句持续累加，编排据此演进
+    const beat = s % 16;                // 所属小节内的步序（fill / hat 补点判定）
+
+    // ===== 宏观编排：每 4 小节一段、4 段成 16 小节大循环，做出"歌"的起伏，久听不腻 =====
+    const block = Math.floor(bar / 4) % 4;        // 0 收 / 1 常 / 2 放(chorus) / 3 回
+    const intensity = [0, 1, 2, 1][block];
+    const leadOct = M.tier <= 2 ? [0, 0, 12, 0][block] : 0; // 低档 chorus 抬八度变亮；高档已够高不抬
+    const fillBar = (bar % 4) === 3;              // 每 4 小节最后一小节加段尾过门
+    const thin = intensity === 0 && M.tier < 4;   // 收段把旋律变稀给 chorus 留对比；终章不收
+
     if (M.kick[s]) {
       kick.triggerAttackRelease('C1', '8n', time);
       kickClick.triggerAttackRelease('16n', time, 0.9);
@@ -95,11 +107,25 @@ export async function initAudio() {
       Tone.Draw.schedule(() => { game.beatPulse = 1; }, time);
     }
     if (M.snare[s]) { snareNoise.triggerAttackRelease('16n', time); snareBody.triggerAttackRelease('G3', '16n', time, 0.7); }
-    if (M.hat[s]) hat.triggerAttackRelease('32n', time, M.tier >= 3 ? 0.8 : 0.5);
+    // 段尾过门：每 4 小节最后一拍补一串 16 分军鼓渐强，推进到下一段
+    if (fillBar && beat >= 13 && !M.snare[s]) snareNoise.triggerAttackRelease('32n', time, 0.3 + (beat - 13) * 0.18);
+    // hi-hat：基础踩点力度微抖（人性化）；chorus 段把空拍也补成 16 分，密度更高
+    if (M.hat[s]) hat.triggerAttackRelease('32n', time, (M.tier >= 3 ? 0.7 : 0.45) + Math.random() * 0.2);
+    else if (intensity >= 2 && beat % 2 === 1) hat.triggerAttackRelease('32n', time, 0.22 + Math.random() * 0.15);
     if (M.bass && M.bass[s]) { bass.triggerAttackRelease(M.bass[s], '8n', time); sub.triggerAttackRelease(semis(M.bass[s], -12), '8n', time); }
-    if (M.lead && M.lead[s]) lead.triggerAttackRelease(M.lead[s], '16n', time);
-    // 每半小节（每 8 步）按当前贝斯根音铺一个纯五度和弦，中性不跑调，补满空隙
-    if (s % 8 === 0) { const r = bassRootAt(M, s); if (r) pad.triggerAttackRelease([semis(r, 12), semis(r, 19), semis(r, 24)], '2n', time, 0.5); }
+    // 旋律：收段只在拍点(每 4 步)演奏、变稀；chorus 抬八度并加力度，做出明暗对比
+    if (M.lead && M.lead[s] && (!thin || beat % 4 === 0)) {
+      lead.triggerAttackRelease(semis(M.lead[s], leadOct), '16n', time, 0.55 + intensity * 0.12);
+    }
+    // 每半小节按当前贝斯根音铺纯五度和弦；放段多叠一个高八度顶音更饱满
+    if (s % 8 === 0) {
+      const r = bassRootAt(M, s);
+      if (r) {
+        const chord = [semis(r, 12), semis(r, 19), semis(r, 24)];
+        if (intensity >= 2) chord.push(semis(r, 28));
+        pad.triggerAttackRelease(chord, '2n', time, 0.42 + intensity * 0.08);
+      }
+    }
     step++;
   }, '16n');
   audio.ready = true;
