@@ -37,7 +37,8 @@ export function draw(now) {
   if (game.running) {
     game.moles.forEach(m => {
       const k = keyFor(m.midi); if (!k) return; const pal = colFor(m.midi);
-      const left = 1 - (now - m.born) / m.ttl; const cy = kb.keyTop - 95; const R = Math.min(k.w * 0.4, 52);
+      // 半径随节拍脉冲涨缩：强拍时目标圈"涨"一下，给玩家预判踩点的视觉锚（P2）
+      const left = 1 - (now - m.born) / m.ttl; const cy = kb.keyTop - 95; const R = Math.min(k.w * 0.4, 52) * (1 + game.beatPulse * 0.12);
       ctx.beginPath(); ctx.arc(k.cx, cy, R, -Math.PI / 2, -Math.PI / 2 + left * Math.PI * 2);
       ctx.strokeStyle = left < 0.3 ? '#FF8585' : pal[0]; ctx.lineWidth = 6; ctx.lineCap = 'round'; ctx.stroke();
       ctx.beginPath(); ctx.arc(k.cx, cy, R * 0.62, 0, 7); ctx.fillStyle = pal[0]; ctx.globalAlpha = 0.85; ctx.fill(); ctx.globalAlpha = 1;

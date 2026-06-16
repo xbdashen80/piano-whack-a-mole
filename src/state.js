@@ -32,6 +32,8 @@ export const game = {
   musicTier: 0,
   waterPhase: 0,
   beatPulse: 0,
+  lastBeatAt: 0,   // 最近一拍触发时刻(performance.now)，供踩点判定算"离鼓点多远"
+  beatMs: 0,       // 当前一拍毫秒长(60/bpm*1000)；0=尚无拍/拍源停摆
 };
 
 // 小熊: pos 0(高,安全)→1(沉入水). vel速度. hop跳跃动画. flash高亮.

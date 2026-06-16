@@ -2,6 +2,7 @@
 // 背景鼓机/贝斯/旋律 + 命中等音效。Tone 由 index.html 的 CDN 脚本以全局形式提供。
 import { MUSIC } from './levels.js';
 import { game } from './state.js';
+import { emit } from './events.js';
 import { logErr } from './diagnostics.js';
 
 export const audio = { ready: false, bgmOn: true, sfxOn: true };
@@ -91,6 +92,11 @@ export async function initAudio() {
     const bar = Math.floor(step / 16);  // 宏观小节计数：跨乐句持续累加，编排据此演进
     const beat = s % 16;                // 所属小节内的步序（fill / hat 补点判定）
 
+    // ===== 节拍同步：四分音符栅格发"拍"事件，驱动地鼠卡鼓点生成（P2） =====
+    // Tone.Draw 在音频时间到达 time 的视觉帧触发，回调里 performance.now() ≈ 可听见的鼓点，
+    // 借此把音频时钟桥回游戏的 performance.now() 时钟。
+    if (s % 4 === 0) { const ms = 60 / M.bpm * 1000, strong = !!M.kick[s]; Tone.Draw.schedule(() => emit('beat', ms, strong), time); }
+
     // ===== 宏观编排：每 4 小节一段、4 段成 16 小节大循环，做出"歌"的起伏，久听不腻 =====
     const block = Math.floor(bar / 4) % 4;        // 0 收 / 1 常 / 2 放(chorus) / 3 回
     const intensity = [0, 1, 2, 1][block];
@@ -139,7 +145,8 @@ export function setMusicTier(t) {
 export function startBgm() {
   if (!audio.ready) return;
   Tone.Transport.bpm.value = MUSIC[game.musicTier].bpm; Tone.Transport.start();
-  if (audio.bgmOn && drumLoop.state !== 'started') drumLoop.start(0);
+  // drumLoop 恒定运行：它现在还是节拍/生成的时钟源，静音由 bgmBus.gain 处理（关 BGM 也有拍可用）
+  if (drumLoop.state !== 'started') drumLoop.start(0);
   bgmBus.gain.rampTo(audio.bgmOn ? BGM_LEVEL : 0, 0.4);
 }
 

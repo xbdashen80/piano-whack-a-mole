@@ -9,6 +9,14 @@ import { logErr, spawnWatchdog } from './diagnostics.js';
 import * as ui from './ui.js';
 
 const flash = m => { flashMap[m] = performance.now() + 150; };
+const GOLD = ['#FFD166', '#FFE9A8']; // 踩中鼓点的金色特效调色板
+
+// 当前时刻离最近一拍有多近(ms)；用于踩点奖励。无拍源(beatMs=0)时返回极大值=永不踩中。
+function offBeatMs(now) {
+  if (!game.beatMs) return 1e9;
+  const ph = ((now - game.lastBeatAt) % game.beatMs + game.beatMs) % game.beatMs;
+  return Math.min(ph, game.beatMs - ph);
+}
 
 function spawnMole() {
   try {
@@ -22,12 +30,15 @@ function spawnMole() {
 function press(midi, vel) {
   try {
     if (!game.running) return; flash(midi);
+    const now = performance.now();
     const idx = game.moles.findIndex(m => m.midi === midi); const k = keyFor(midi);
     if (idx >= 0) {
       const m = game.moles[idx]; game.moles.splice(idx, 1);
-      const ratio = (performance.now() - m.born) / m.ttl; const perfect = ratio < 0.5;
-      game.combo++; game.score += (perfect ? 15 : 10) + game.combo * 2;
-      sfxHit(midi, perfect, game.combo); if (k) fx(k.cx, kb.keyTop, colFor(midi), perfect);
+      const ratio = (now - m.born) / m.ttl; const perfect = ratio < 0.5;
+      // 踩点奖励：恰好敲在鼓点附近(±110ms)额外加分 + 金色大特效；判定其余不变(偏拍照常命中)
+      const onBeat = offBeatMs(now) < 110;
+      game.combo++; game.score += (perfect ? 15 : 10) + game.combo * 2 + (onBeat ? 8 : 0);
+      sfxHit(midi, perfect, game.combo); if (k) fx(k.cx, kb.keyTop, onBeat ? GOLD : colFor(midi), perfect || onBeat);
       const L = LEVELS[game.curLevel];
       bear.pos = Math.max(0.04, bear.pos - L.bounce * 0.6);
       bear.vel = -(L.bounce * 0.5 * (perfect ? 1.3 : 1));
@@ -47,6 +58,17 @@ function missTimeout() { game.combo = 0; hurtBear(); sfxMiss(); ui.refreshHUD();
 
 function checkPass() { if (game.score >= LEVELS[game.curLevel].goal) levelClear(); }
 
+// 每拍触发(来自鼓机的 'beat' 事件，已对齐到可听见的鼓点)：刷新节拍锚点 + 卡鼓点生成地鼠。
+function onBeat(beatMs, strong) {
+  game.lastBeatAt = performance.now(); game.beatMs = beatMs;
+  if (!game.running || game.paused) return;
+  const L = LEVELS[game.curLevel];
+  if (game.lastBeatAt >= game.nextSpawn && game.moles.length < L.maxActive) {
+    spawnMole();
+    game.nextSpawn = game.lastBeatAt + L.spawn[0] + Math.random() * (L.spawn[1] - L.spawn[0]);
+  }
+}
+
 function tick(now) {
   try {
     const dt = game.lastTickTime ? Math.min(0.05, (now - game.lastTickTime) / 1000) : 0.016; game.lastTickTime = now;
@@ -56,15 +78,17 @@ function tick(now) {
     decayAnim();
     if (game.running && !game.paused) {
       const L = LEVELS[game.curLevel];
-      // 追赶式生成:一帧内补足该出的地鼠,nextSpawn 不会落后卡死
-      let guard = 0;
-      while (now >= game.nextSpawn && game.moles.length < L.maxActive && guard < 5) {
-        spawnMole();
-        game.nextSpawn = now + L.spawn[0] + Math.random() * (L.spawn[1] - L.spawn[0]);
-        guard++;
+      // 正常情况下生成由鼓点(onBeat)驱动以卡拍；仅当拍源停摆(关 BGM/音频失败)>500ms 时，
+      // 退回墙钟追赶式生成，保证无论有没有音乐都能玩、不卡死。
+      if (now - game.lastBeatAt > 500) {
+        let guard = 0;
+        while (now >= game.nextSpawn && game.moles.length < L.maxActive && guard < 5) {
+          spawnMole();
+          game.nextSpawn = now + L.spawn[0] + Math.random() * (L.spawn[1] - L.spawn[0]);
+          guard++;
+        }
+        if (now >= game.nextSpawn && game.moles.length >= L.maxActive) game.nextSpawn = now + 300;
       }
-      // 若到点但已满,推进 nextSpawn 防止下帧瞬间狂刷
-      if (now >= game.nextSpawn && game.moles.length >= L.maxActive) game.nextSpawn = now + 300;
       // 看门狗:若太久没有任何地鼠(>spawn上限的1.5倍),强制冒一个,杜绝卡死
       if (game.moles.length === 0 && now - game.lastMoleTime > L.spawn[1] * 1.5) { spawnMole(); game.nextSpawn = now + L.spawn[0]; }
       for (let i = game.moles.length - 1; i >= 0; i--) {
@@ -125,6 +149,7 @@ function pressForAdvance(midi) {
 export function initGame() {
   on('press', (midi, vel) => press(midi, vel));
   on('press', midi => pressForAdvance(midi));
+  on('beat', (ms, strong) => onBeat(ms, strong));
   on('start', i => startGame(i));
   on('pauseToggle', pauseToggle);
   on('gameOver', gameOver);
