@@ -1,17 +1,55 @@
 // ================= 通用 Canvas 绘制 =================
 // 背景拖影、琴键、目标圈、提示手、粒子/水波。小熊由 bear.js 负责。
-import { ctx, view, game, kb, flashMap, particles, ripples, keyFor, colFor } from './state.js';
+import { ctx, view, game, kb, flashMap, particles, ripples, popups, keyFor, colFor } from './state.js';
 import { midiName, FINGER_COLORS } from './levels.js';
 import { drawBear } from './bear.js';
 
 // 命中特效：爆粒子 + 扩散水波
 export function fx(cx, cy, pal, big) {
-  const n = big ? 40 : 24;
+  // 连击越高，爆得越多越散 → 画面越"热"
+  const boost = Math.min(game.combo, 30);
+  const n = (big ? 40 : 24) + boost;
   for (let i = 0; i < n; i++) {
-    const a = Math.random() * Math.PI - Math.PI, sp = (big ? 11 : 6) * (0.4 + Math.random());
+    const a = Math.random() * Math.PI - Math.PI, sp = (big ? 11 : 6) * (0.4 + Math.random()) * (1 + boost * 0.02);
     particles.push({ x: cx, y: cy, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 3, r: 2 + Math.random() * 4, life: 1, color: pal[Math.random() < 0.5 ? 0 : 1] });
   }
-  ripples.push({ x: cx, y: cy, r: 6, max: big ? 140 : 80, life: 1, color: pal[0] });
+  ripples.push({ x: cx, y: cy, r: 6, max: (big ? 140 : 80) + boost * 3, life: 1, color: pal[0] });
+}
+
+// 连击热度配色：越高越烫(暖→橙→红→品红)
+function comboRGB(c) {
+  if (c >= 30) return '255,80,160';
+  if (c >= 20) return '255,70,70';
+  if (c >= 10) return '255,150,40';
+  return '255,210,120';
+}
+
+// 屏幕空间叠加层：连击光晕 + 中央大连击数字 + 分数弹字 + 冲击白闪（均不随震屏抖动）
+function drawOverlays() {
+  const rgb = comboRGB(game.combo);
+  if (game.running && game.combo >= 3) {
+    const it = Math.min(game.combo / 30, 1);
+    const g = ctx.createRadialGradient(view.W / 2, view.H / 2, Math.min(view.W, view.H) * 0.3, view.W / 2, view.H / 2, Math.max(view.W, view.H) * 0.72);
+    g.addColorStop(0, `rgba(${rgb},0)`); g.addColorStop(1, `rgba(${rgb},${0.28 * it})`);
+    ctx.fillStyle = g; ctx.fillRect(0, 0, view.W, view.H);
+  }
+  if (game.running && game.combo >= 5) {
+    const scale = 1 + game.comboFlash * 0.5;
+    ctx.save(); ctx.translate(view.W / 2, kb.keyTop - 210); ctx.scale(scale, scale);
+    ctx.globalAlpha = 0.92; ctx.fillStyle = `rgb(${rgb})`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = 'bold 64px sans-serif'; ctx.fillText(game.combo, 0, 0);
+    ctx.font = 'bold 20px sans-serif'; ctx.fillText('连击', 0, 44);
+    ctx.restore(); ctx.globalAlpha = 1;
+  }
+  for (let i = popups.length - 1; i >= 0; i--) {
+    const p = popups[i]; p.y += p.vy; p.vy *= 0.96; p.life -= 0.02;
+    ctx.globalAlpha = Math.max(0, p.life); ctx.fillStyle = p.color;
+    ctx.font = `bold ${Math.round(22 * (p.scale || 1))}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(p.text, p.x, p.y);
+    if (p.life <= 0) popups.splice(i, 1);
+  }
+  ctx.globalAlpha = 1; ctx.textBaseline = 'alphabetic';
+  if (game.impactFlash > 0.01) { ctx.fillStyle = `rgba(255,255,255,${game.impactFlash * 0.22})`; ctx.fillRect(0, 0, view.W, view.H); }
 }
 
 function drawHand(x, y, scale) {
@@ -31,6 +69,10 @@ function drawHand(x, y, scale) {
 
 export function draw(now) {
   ctx.fillStyle = 'rgba(10,10,20,0.3)'; ctx.fillRect(0, 0, view.W, view.H);
+  // 震屏：把整个游戏层随机位移一点（背景拖影已铺满全屏，位移露出的边缘仍是暗底）
+  const sx = game.shake ? (Math.random() * 2 - 1) * game.shake : 0;
+  const sy = game.shake ? (Math.random() * 2 - 1) * game.shake : 0;
+  ctx.save(); ctx.translate(sx, sy);
   ctx.strokeStyle = 'rgba(255,255,255,0.04)'; ctx.lineWidth = 1;
   kb.keys.forEach(k => { ctx.beginPath(); ctx.moveTo(k.x, 0); ctx.lineTo(k.x, kb.keyTop); ctx.stroke(); });
   if (game.running || game.breaking) drawBear(now);
@@ -72,4 +114,6 @@ export function draw(now) {
     if (p.life <= 0 || p.y > view.H) particles.splice(i, 1);
   }
   ctx.globalAlpha = 1;
+  ctx.restore(); // 结束震屏位移
+  drawOverlays();
 }

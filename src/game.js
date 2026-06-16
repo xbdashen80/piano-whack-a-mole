@@ -1,5 +1,5 @@
 // ================= 主循环 + 状态机 + 判定 + 计分 + 过关/失败 =================
-import { game, bear, particles, ripples, flashMap, prog, persist, layoutKeys, keyFor, colFor, kb } from './state.js';
+import { game, bear, particles, ripples, popups, flashMap, prog, persist, layoutKeys, keyFor, colFor, kb, view } from './state.js';
 import { LEVELS } from './levels.js';
 import { initAudio, setMusicTier, startBgm, sfxHit, sfxCombo, sfxMiss, sfxLevel, sfxTick, duckBgm } from './audio.js';
 import { fx, draw } from './render.js';
@@ -37,16 +37,24 @@ function press(midi, vel) {
       const ratio = (now - m.born) / m.ttl; const perfect = ratio < 0.5;
       // 踩点奖励：恰好敲在鼓点附近(±110ms)额外加分 + 金色大特效；判定其余不变(偏拍照常命中)
       const onBeat = offBeatMs(now) < 110;
-      game.combo++; game.score += (perfect ? 15 : 10) + game.combo * 2 + (onBeat ? 8 : 0);
+      game.combo++;
+      const gain = (perfect ? 15 : 10) + game.combo * 2 + (onBeat ? 8 : 0); game.score += gain;
       sfxHit(midi, perfect, game.combo); if (k) fx(k.cx, kb.keyTop, onBeat ? GOLD : colFor(midi), perfect || onBeat);
+      // 打击感：震屏(踩点/perfect/高连击更狠) + 分数弹字 + 连击脉冲
+      const big = perfect || onBeat;
+      game.shake = Math.min(13, game.shake + (big ? 7 : 4) + Math.min(game.combo, 20) * 0.25);
+      game.comboFlash = 1;
+      popups.push({ x: k ? k.cx : view.W / 2, y: kb.keyTop - 110, text: '+' + gain, color: onBeat ? '#FFD166' : (perfect ? '#9DE5B5' : '#FFFFFF'), life: 1, vy: -1.7, scale: big ? 1.35 : 1 });
       const L = LEVELS[game.curLevel];
       bear.pos = Math.max(0.04, bear.pos - L.bounce * 0.6);
       bear.vel = -(L.bounce * 0.5 * (perfect ? 1.3 : 1));
       bear.hop = 1; bear.flash = 1;
-      if (game.combo > 0 && game.combo % 10 === 0) { ui.showToast('🔥 ' + game.combo + ' 连击！', '#FF6B9D'); sfxCombo(); bear.pos = Math.max(0.04, bear.pos - 0.1); }
+      if (game.combo > 0 && game.combo % 10 === 0) { ui.showToast('🔥 ' + game.combo + ' 连击！', '#FF6B9D'); sfxCombo(); bear.pos = Math.max(0.04, bear.pos - 0.1); game.shake = 16; game.impactFlash = 1; }
       checkPass();
     } else {
       game.combo = 0; hurtBear(); if (k) fx(k.cx, kb.keyTop, ['#888', '#aaa'], false); sfxMiss();
+      game.shake = Math.min(10, game.shake + 5);
+      popups.push({ x: k ? k.cx : view.W / 2, y: kb.keyTop - 100, text: 'Miss', color: '#FF8585', life: 1, vy: -1.2, scale: 1 });
     }
     ui.refreshHUD();
   } catch (e) { logErr('press', e); }
@@ -54,7 +62,7 @@ function press(midi, vel) {
 
 function hurtBear() { bear.pos = Math.min(0.97, bear.pos + 0.06); bear.vel += 0.02; }
 
-function missTimeout() { game.combo = 0; hurtBear(); sfxMiss(); ui.refreshHUD(); }
+function missTimeout() { game.combo = 0; hurtBear(); sfxMiss(); game.shake = Math.min(9, game.shake + 4); ui.refreshHUD(); }
 
 function checkPass() { if (game.score >= LEVELS[game.curLevel].goal) levelClear(); }
 
@@ -74,6 +82,10 @@ function tick(now) {
     const dt = game.lastTickTime ? Math.min(0.05, (now - game.lastTickTime) / 1000) : 0.016; game.lastTickTime = now;
     game.waterPhase += dt * 1.5;
     if (game.beatPulse > 0) game.beatPulse *= 0.88;
+    // 打击感瞬时量衰减
+    if (game.shake > 0.1) game.shake *= 0.85; else game.shake = 0;
+    if (game.comboFlash > 0.01) game.comboFlash *= 0.86; else game.comboFlash = 0;
+    if (game.impactFlash > 0.01) game.impactFlash *= 0.82; else game.impactFlash = 0;
     if (game.running && !game.paused) applySink(dt);
     decayAnim();
     if (game.running && !game.paused) {

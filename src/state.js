@@ -34,6 +34,10 @@ export const game = {
   beatPulse: 0,
   lastBeatAt: 0,   // 最近一拍触发时刻(performance.now)，供踩点判定算"离鼓点多远"
   beatMs: 0,       // 当前一拍毫秒长(60/bpm*1000)；0=尚无拍/拍源停摆
+  // ---- 打击感(game juice)：均为每帧衰减的瞬时量 ----
+  shake: 0,        // 震屏强度(px)，draw 里随机位移、tick 里衰减
+  comboFlash: 0,   // 连击数字打击脉冲(命中=1)，驱动中央大连击数字的缩放
+  impactFlash: 0,  // 全屏白闪(连击里程碑时爆一下)
 };
 
 // 小熊: pos 0(高,安全)→1(沉入水). vel速度. hop跳跃动画. flash高亮.
@@ -41,6 +45,7 @@ export const bear = { pos: 0.2, vel: 0, hop: 0, flash: 0 };
 
 export const particles = [];
 export const ripples = [];
+export const popups = [];   // 分数弹字 {x,y,text,color,life,vy,scale}
 export const flashMap = {};
 
 // ---------- 键盘几何 ----------
