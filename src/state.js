@@ -38,6 +38,10 @@ export const game = {
   shake: 0,        // 震屏强度(px)，draw 里随机位移、tick 里衰减
   comboFlash: 0,   // 连击数字打击脉冲(命中=1)，驱动中央大连击数字的缩放
   impactFlash: 0,  // 全屏白闪(连击里程碑时爆一下)
+  // ---- 狂热 Fever 模式 ----
+  feverGauge: 0,   // 狂热槽 0..1，命中蓄、失误掉、闲置缓落
+  fever: false,    // 是否处于狂热(分数×2/更密/音乐更炸/金光)
+  feverUntil: 0,   // 狂热结束时刻(performance.now)
 };
 
 // 小熊: pos 0(高,安全)→1(沉入水). vel速度. hop跳跃动画. flash高亮.

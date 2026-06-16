@@ -99,8 +99,9 @@ export async function initAudio() {
 
     // ===== 宏观编排：每 4 小节一段、4 段成 16 小节大循环，做出"歌"的起伏，久听不腻 =====
     const block = Math.floor(bar / 4) % 4;        // 0 收 / 1 常 / 2 放(chorus) / 3 回
-    const intensity = [0, 1, 2, 1][block];
-    const leadOct = M.tier <= 2 ? [0, 0, 12, 0][block] : 0; // 低档 chorus 抬八度变亮；高档已够高不抬
+    // 狂热 Fever：强制 chorus 级强度，旋律抬八度，music 更炸（不改 BPM 以保持踩点同步）
+    const intensity = game.fever ? 2 : [0, 1, 2, 1][block];
+    const leadOct = M.tier <= 2 ? (game.fever ? 12 : [0, 0, 12, 0][block]) : 0; // 低档 chorus/狂热抬八度变亮；高档已够高不抬
     const fillBar = (bar % 4) === 3;              // 每 4 小节最后一小节加段尾过门
     const thin = intensity === 0 && M.tier < 4;   // 收段把旋律变稀给 chorus 留对比；终章不收
 
@@ -194,4 +195,13 @@ export function sfxSplash() {
 export function sfxTick() {
   if (!audio.sfxOn || !audio.ready) return;
   safe(() => { const t = sfxBase(); tickSynth.triggerAttackRelease('64n', t, 0.5); bump(t); });
+}
+// 进入狂热的一记上行 riser，宣告高潮
+export function sfxFever() {
+  if (!audio.sfxOn || !audio.ready) return;
+  safe(() => {
+    const notes = ['C5', 'E5', 'G5', 'C6', 'E6', 'G6', 'C7']; const t = sfxBase();
+    notes.forEach((n, i) => arpSynth.triggerAttackRelease(n, '16n', t + i * 0.04, 1));
+    tickSynth.triggerAttackRelease('16n', t + notes.length * 0.04, 0.8); bump(t + notes.length * 0.04 + 0.05);
+  });
 }

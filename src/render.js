@@ -24,10 +24,27 @@ function comboRGB(c) {
   return '255,210,120';
 }
 
-// 屏幕空间叠加层：连击光晕 + 中央大连击数字 + 分数弹字 + 冲击白闪（均不随震屏抖动）
-function drawOverlays() {
+// 屏幕空间叠加层：狂热 + 连击光晕 + 中央大连击数字 + 分数弹字 + 冲击白闪（均不随震屏抖动）
+function drawOverlays(now) {
+  // 狂热槽（非狂热时显示，蓄满即进狂热）
+  if (game.running && !game.fever && game.feverGauge > 0.001) {
+    const gw = Math.min(360, view.W * 0.5), gx = (view.W - gw) / 2, gy = 64, gh = 10, f = game.feverGauge;
+    ctx.globalAlpha = 0.9;
+    ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.fillRect(gx, gy, gw, gh);
+    ctx.fillStyle = f > 0.8 ? '#FFD166' : '#FF9D5C'; ctx.fillRect(gx, gy, gw * f, gh);
+    ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText('🔥 狂热槽', view.W / 2, gy - 4); ctx.globalAlpha = 1;
+  }
+  // 狂热中：全场金色脉冲滤镜 + 中央跳动横幅
+  if (game.running && game.fever) {
+    ctx.fillStyle = `rgba(255,190,50,${0.10 + 0.06 * Math.abs(Math.sin(now / 120))})`; ctx.fillRect(0, 0, view.W, view.H);
+    const s = 1 + 0.08 * Math.sin(now / 80);
+    ctx.save(); ctx.translate(view.W / 2, 92); ctx.scale(s, s);
+    ctx.fillStyle = '#FFD166'; ctx.font = 'bold 44px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('🔥 FEVER 🔥', 0, 0); ctx.restore(); ctx.textBaseline = 'alphabetic';
+  }
   const rgb = comboRGB(game.combo);
-  if (game.running && game.combo >= 3) {
+  if (game.running && !game.fever && game.combo >= 3) {
     const it = Math.min(game.combo / 30, 1);
     const g = ctx.createRadialGradient(view.W / 2, view.H / 2, Math.min(view.W, view.H) * 0.3, view.W / 2, view.H / 2, Math.max(view.W, view.H) * 0.72);
     g.addColorStop(0, `rgba(${rgb},0)`); g.addColorStop(1, `rgba(${rgb},${0.28 * it})`);
@@ -77,22 +94,32 @@ export function draw(now) {
   kb.keys.forEach(k => { ctx.beginPath(); ctx.moveTo(k.x, 0); ctx.lineTo(k.x, kb.keyTop); ctx.stroke(); });
   if (game.running || game.breaking) drawBear(now);
   if (game.running) {
-    game.moles.forEach(m => {
+    game.moles.forEach((m, mi) => {
       const k = keyFor(m.midi); if (!k) return; const pal = colFor(m.midi);
+      // 必须按出现顺序敲：moles[0] 是最早出现=当前目标(高亮)，其余变暗表示"还没轮到"
+      const isNext = mi === 0; const a = isNext ? 1 : 0.34;
       // 半径随节拍脉冲涨缩：强拍时目标圈"涨"一下，给玩家预判踩点的视觉锚（P2）
       const left = 1 - (now - m.born) / m.ttl; const cy = kb.keyTop - 95; const R = Math.min(k.w * 0.4, 52) * (1 + game.beatPulse * 0.12);
+      if (isNext) { // 当前目标加一道脉冲白环，明确"先敲这个"
+        ctx.globalAlpha = 0.45 + 0.3 * Math.abs(Math.sin(now / 180));
+        ctx.beginPath(); ctx.arc(k.cx, cy, R + 9, 0, 7); ctx.strokeStyle = '#fff'; ctx.lineWidth = 3; ctx.stroke(); ctx.globalAlpha = 1;
+      }
+      ctx.globalAlpha = a;
       ctx.beginPath(); ctx.arc(k.cx, cy, R, -Math.PI / 2, -Math.PI / 2 + left * Math.PI * 2);
       ctx.strokeStyle = left < 0.3 ? '#FF8585' : pal[0]; ctx.lineWidth = 6; ctx.lineCap = 'round'; ctx.stroke();
-      ctx.beginPath(); ctx.arc(k.cx, cy, R * 0.62, 0, 7); ctx.fillStyle = pal[0]; ctx.globalAlpha = 0.85; ctx.fill(); ctx.globalAlpha = 1;
+      ctx.beginPath(); ctx.arc(k.cx, cy, R * 0.62, 0, 7); ctx.fillStyle = pal[0]; ctx.globalAlpha = 0.85 * a; ctx.fill();
+      ctx.globalAlpha = a;
       ctx.fillStyle = '#fff'; ctx.font = 'bold 20px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.fillText(midiName(m.midi), k.cx, cy - 6);
       ctx.fillStyle = FINGER_COLORS[k.finger]; ctx.beginPath(); ctx.arc(k.cx, cy + 16, 11, 0, 7); ctx.fill();
-      ctx.fillStyle = '#1a1a22'; ctx.font = 'bold 14px sans-serif'; ctx.fillText(k.finger, k.cx, cy + 16); ctx.textBaseline = 'alphabetic';
+      ctx.fillStyle = '#1a1a22'; ctx.font = 'bold 14px sans-serif'; ctx.fillText(k.finger, k.cx, cy + 16);
+      ctx.globalAlpha = 1; ctx.textBaseline = 'alphabetic';
     });
   }
   kb.keys.forEach(k => {
-    const lit = flashMap[k.midi] > now; const hasMole = game.running && game.moles.some(m => m.midi === k.midi);
-    ctx.fillStyle = lit ? '#9DE5B5' : (hasMole ? '#FFE9B0' : '#f4f4f8');
+    const lit = flashMap[k.midi] > now;
+    const isTarget = game.running && game.moles.length > 0 && game.moles[0].midi === k.midi; // 仅当前目标键亮黄
+    ctx.fillStyle = lit ? '#9DE5B5' : (isTarget ? '#FFE9B0' : '#f4f4f8');
     ctx.fillRect(k.x + 1, kb.keyTop, k.w - 2, kb.keyH); ctx.strokeStyle = 'rgba(0,0,0,0.25)'; ctx.lineWidth = 1; ctx.strokeRect(k.x + 1, kb.keyTop, k.w - 2, kb.keyH);
     ctx.fillStyle = FINGER_COLORS[k.finger]; ctx.beginPath(); ctx.arc(k.cx, kb.keyTop + kb.keyH - 44, 12, 0, 7); ctx.fill();
     ctx.fillStyle = '#1a1a22'; ctx.font = 'bold 14px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -115,5 +142,5 @@ export function draw(now) {
   }
   ctx.globalAlpha = 1;
   ctx.restore(); // 结束震屏位移
-  drawOverlays();
+  drawOverlays(now);
 }
