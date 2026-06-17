@@ -177,9 +177,11 @@ button.on{background:rgba(80,160,120,0.3);border-color:rgba(80,200,140,0.5);}
   ];
   var SONGS = {
     laputa: {
+      // bpm = 演奏速度（预演示范按它播，让你听到"最终效果"的节奏）；关卡里的 bpm 是慢练速度，二者不同
       title: "天空之城",
       key: "C",
       timeSignature: "4/4",
+      bpm: 70,
       levels: [
         {
           id: 1,
@@ -1775,6 +1777,7 @@ button.on{background:rgba(80,160,120,0.3);border-color:rgba(80,200,140,0.5);}
   var boomFilter;
   var boomDrive;
   var boomSub;
+  var pianoSynth;
   var limiter;
   var bgmComp;
   var bgmEq;
@@ -1820,6 +1823,11 @@ button.on{background:rgba(80,160,120,0.3);border-color:rgba(80,200,140,0.5);}
     loseSynth.volume.value = -8;
     tickSynth = new Tone.NoiseSynth({ noise: { type: "white" }, envelope: { attack: 1e-3, decay: 0.03, sustain: 0 } }).connect(sfxBus);
     tickSynth.volume.value = -22;
+    pianoSynth = new Tone.PolySynth(Tone.Synth, {
+      oscillator: { type: "custom", partials: [1, 0.5, 0.32, 0.18, 0.1, 0.05] },
+      envelope: { attack: 4e-3, decay: 1.5, sustain: 0.05, release: 0.7 }
+    }).connect(sfxBus);
+    pianoSynth.volume.value = -7;
     boomFilter = new Tone.Filter(1100, "lowpass").connect(sfxBus);
     boomDrive = new Tone.Distortion({ distortion: 0.6, wet: 0.7 }).connect(boomFilter);
     boomNoise = new Tone.NoiseSynth({ noise: { type: "brown" }, envelope: { attack: 1e-3, decay: 0.7, sustain: 0 } }).connect(boomDrive);
@@ -1963,7 +1971,16 @@ button.on{background:rgba(80,160,120,0.3);border-color:rgba(80,200,140,0.5);}
     safe(() => {
       const note = Tone.Frequency(midi, "midi").toNote();
       const t = sfxBase();
-      arpSynth.triggerAttackRelease(note, "8n", t, 0.5);
+      pianoSynth.triggerAttackRelease(note, 0.5, t, 0.55);
+      bump(t);
+    });
+  }
+  function sfxPiano(midi, durSec = 0.5, vel = 0.9) {
+    if (!audio.sfxOn || !audio.ready) return;
+    safe(() => {
+      const note = Tone.Frequency(midi, "midi").toNote();
+      const t = sfxBase();
+      pianoSynth.triggerAttackRelease(note, durSec, t, vel);
       bump(t);
     });
   }
@@ -3196,7 +3213,7 @@ button.on{background:rgba(80,160,120,0.3);border-color:rgba(80,200,140,0.5);}
     if (midi === target.midi) {
       s.ptr++;
       game.combo++;
-      sfxHit(midi, true, 0);
+      sfxPiano(midi, 0.6);
       if (k) fx(k.cx, kb.keyTop, colFor(midi), true);
       const gain = 10 + game.combo * 2;
       game.score += gain;
@@ -3233,7 +3250,8 @@ button.on{background:rgba(80,160,120,0.3);border-color:rgba(80,200,140,0.5);}
   function previewStep(dt) {
     const s = game.song, notes = s.notes;
     if (!notes.length) return;
-    const beatMs = 6e4 / (s.bpm || 60);
+    const beatMs = 6e4 / (s.performBpm || s.bpm || 60);
+    const beatSec = beatMs / 1e3;
     const lastBeat = notes[notes.length - 1].startBeat;
     s.previewMs += dt * 1e3;
     let i = 0;
@@ -3241,7 +3259,9 @@ button.on{background:rgba(80,160,120,0.3);border-color:rgba(80,200,140,0.5);}
     const sounding = i - 1;
     if (sounding > s.previewLast) {
       for (let j = s.previewLast + 1; j <= sounding; j++) {
-        sfxHit(notes[j].midi, true, 0);
+        const nx = notes[j + 1];
+        const durSec = Math.max(0.25, Math.min(2.5, (nx ? nx.startBeat - notes[j].startBeat : 2) * beatSec));
+        sfxPiano(notes[j].midi, durSec);
         flash(notes[j].midi);
       }
       s.previewLast = sounding;
@@ -3278,7 +3298,7 @@ button.on{background:rgba(80,160,120,0.3);border-color:rgba(80,200,140,0.5);}
       logErr("initAudio", e);
     }
     game.mode = "song";
-    game.song = { key: songKey, levelIdx, title: song.title, name: lvl.name, bpm: lvl.bpm || 60, notes: lvl.rightHand.slice(), ptr: 0, preview: false, previewMs: 0, previewLast: -1 };
+    game.song = { key: songKey, levelIdx, title: song.title, name: lvl.name, bpm: lvl.bpm || 60, performBpm: song.bpm || lvl.bpm || 70, notes: lvl.rightHand.slice(), ptr: 0, preview: false, previewMs: 0, previewLast: -1 };
     game.score = 0;
     game.combo = 0;
     game.moles = [];
