@@ -2812,39 +2812,138 @@ button.on{background:rgba(80,160,120,0.3);border-color:rgba(80,200,140,0.5);}
     ctx.globalAlpha = 1;
     ctx.textBaseline = "alphabetic";
   }
+  function songAxis() {
+    const s = game.song;
+    const playX = view.W * 0.26, pxPerBeat = 48;
+    const curBeat = (s.notes[s.ptr] || s.notes[s.notes.length - 1]).startBeat;
+    return { playX, pxPerBeat, curBeat, xOf: (b) => playX + (b - curBeat) * pxPerBeat };
+  }
+  var PC_DIATONIC = { 0: 0, 2: 1, 4: 2, 5: 3, 7: 4, 9: 5, 11: 6 };
+  var diatonic = (m) => (Math.floor(m / 12) - 1) * 7 + (PC_DIATONIC[(m % 12 + 12) % 12] ?? 0);
+  function drawStaff(now) {
+    const s = game.song;
+    const notes = s.notes;
+    if (!notes.length) return;
+    const { playX, curBeat, xOf } = songAxis();
+    const gap = 11, midY = 126, DIA_B4 = diatonic(71);
+    const yDia = (d) => midY - (d - DIA_B4) * (gap / 2);
+    const left = 44, right = view.W - 8;
+    const topY = yDia(38), botY = yDia(30);
+    ctx.strokeStyle = "rgba(255,255,255,0.28)";
+    ctx.lineWidth = 1.3;
+    for (let d = 30; d <= 38; d += 2) {
+      const y = yDia(d);
+      ctx.beginPath();
+      ctx.moveTo(left, y);
+      ctx.lineTo(right, y);
+      ctx.stroke();
+    }
+    ctx.fillStyle = "rgba(255,255,255,0.5)";
+    ctx.font = "bold 12px sans-serif";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    ctx.fillText("五线谱", 4, midY);
+    for (let bar = Math.floor(curBeat / 4) * 4; xOf(bar) < right; bar += 4) {
+      const x = xOf(bar);
+      if (x < left) continue;
+      ctx.strokeStyle = "rgba(255,255,255,0.07)";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(x, topY);
+      ctx.lineTo(x, botY);
+      ctx.stroke();
+    }
+    ctx.strokeStyle = "rgba(157,229,181,0.9)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(playX, topY - 24);
+    ctx.lineTo(playX, botY + 8);
+    ctx.stroke();
+    ctx.fillStyle = "rgba(157,229,181,0.95)";
+    ctx.font = "bold 12px sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("▶ 现在", playX, topY - 30);
+    notes.forEach((n, i) => {
+      const nx = xOf(n.startBeat) + 10;
+      if (nx < left - 10 || nx > right + 10) return;
+      const d = diatonic(n.midi), ny = yDia(d), played = i < s.ptr, current = i === s.ptr;
+      const col = current ? "#5DCAA5" : played ? "#888" : "#fff";
+      ctx.strokeStyle = "rgba(255,255,255,0.5)";
+      ctx.lineWidth = 1.3;
+      for (let L = 40; L <= d; L += 2) {
+        const y = yDia(L);
+        ctx.beginPath();
+        ctx.moveTo(nx - 10, y);
+        ctx.lineTo(nx + 10, y);
+        ctx.stroke();
+      }
+      for (let L = 28; L >= d; L -= 2) {
+        const y = yDia(L);
+        ctx.beginPath();
+        ctx.moveTo(nx - 10, y);
+        ctx.lineTo(nx + 10, y);
+        ctx.stroke();
+      }
+      ctx.globalAlpha = played ? 0.3 : 1;
+      ctx.strokeStyle = col;
+      ctx.lineWidth = 2;
+      const up = d < DIA_B4;
+      ctx.beginPath();
+      if (up) {
+        ctx.moveTo(nx + 6, ny);
+        ctx.lineTo(nx + 6, ny - 24);
+      } else {
+        ctx.moveTo(nx - 6, ny);
+        ctx.lineTo(nx - 6, ny + 24);
+      }
+      ctx.stroke();
+      ctx.save();
+      ctx.translate(nx, ny);
+      ctx.rotate(-0.35);
+      ctx.fillStyle = col;
+      ctx.beginPath();
+      ctx.ellipse(0, 0, 6.5, 4.6, 0, 0, 7);
+      ctx.fill();
+      ctx.restore();
+      if (current) {
+        ctx.globalAlpha = 0.4 + 0.4 * Math.abs(Math.sin(now / 180));
+        ctx.strokeStyle = "#fff";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(nx, ny, 11, 0, 7);
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+    });
+    ctx.textBaseline = "alphabetic";
+  }
   function drawScoreRibbon(now) {
     const s = game.song;
     const notes = s.notes;
     if (!notes.length) return;
-    const top = 86, bottom = Math.max(top + 96, kb.keyTop - 165);
-    const playX = view.W * 0.26;
-    const pxPerBeat = 48, pad2 = 24;
+    const top = 168, bottom = Math.max(top + 86, kb.keyTop - 150);
+    const { playX, curBeat, xOf } = songAxis();
+    const pad2 = 22;
     const midis = notes.map((n) => n.midi);
     const lo = Math.min(...midis), hi = Math.max(...midis);
     const span = Math.max(1, hi - lo);
     const yOf = (m) => bottom - pad2 - (m - lo) / span * (bottom - top - pad2 * 2);
-    const curBeat = (notes[s.ptr] || notes[notes.length - 1]).startBeat;
-    const xOf = (b) => playX + (b - curBeat) * pxPerBeat;
     for (let bar = Math.floor(curBeat / 4) * 4; xOf(bar) < view.W; bar += 4) {
       const x = xOf(bar);
       if (x < 18) continue;
-      ctx.strokeStyle = "rgba(255,255,255,0.07)";
+      ctx.strokeStyle = "rgba(255,255,255,0.06)";
       ctx.lineWidth = 1;
       ctx.beginPath();
       ctx.moveTo(x, top);
       ctx.lineTo(x, bottom);
       ctx.stroke();
     }
-    ctx.strokeStyle = "rgba(157,229,181,0.85)";
+    ctx.strokeStyle = "rgba(157,229,181,0.7)";
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.moveTo(playX, top - 4);
     ctx.lineTo(playX, bottom + 4);
     ctx.stroke();
-    ctx.fillStyle = "rgba(157,229,181,0.95)";
-    ctx.font = "bold 12px sans-serif";
-    ctx.textAlign = "center";
-    ctx.fillText("▶ 现在", playX, top - 10);
     ctx.strokeStyle = "rgba(255,255,255,0.16)";
     ctx.lineWidth = 2;
     ctx.beginPath();
@@ -2859,9 +2958,9 @@ button.on{background:rgba(80,160,120,0.3);border-color:rgba(80,200,140,0.5);}
     });
     ctx.stroke();
     notes.forEach((n, i) => {
-      const x = xOf(n.startBeat), w = Math.max(26, (DUR_BEATS[n.duration] || 1) * pxPerBeat - 8);
+      const x = xOf(n.startBeat), w = Math.max(26, (DUR_BEATS[n.duration] || 1) * 48 - 8);
       if (x + w < 8 || x > view.W - 4) return;
-      const y = yOf(n.midi) - 13, h = 26, played = i < s.ptr, current = i === s.ptr;
+      const y = yOf(n.midi) - 12, h = 24, played = i < s.ptr, current = i === s.ptr;
       ctx.globalAlpha = played ? 0.22 : current ? 1 : 0.82;
       rr2(x, y, w, h, 7);
       ctx.fillStyle = FINGER_COLORS[n.finger] || "#9DE5B5";
@@ -2893,7 +2992,10 @@ button.on{background:rgba(80,160,120,0.3);border-color:rgba(80,200,140,0.5);}
     const s = game.song;
     const cur = s ? s.notes[s.ptr] : null;
     const nxt = s ? s.notes[s.ptr + 1] : null;
-    if (s) drawScoreRibbon(now);
+    if (s) {
+      drawStaff(now);
+      drawScoreRibbon(now);
+    }
     if (nxt) drawSongTarget(nxt, now, false);
     if (cur) drawSongTarget(cur, now, true);
     kb.keys.forEach((k) => {
