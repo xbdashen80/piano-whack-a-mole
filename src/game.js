@@ -1,7 +1,7 @@
 // ================= 主循环 + 状态机 + 判定 + 计分 + 过关/失败 =================
 import { game, bear, particles, ripples, popups, flashMap, prog, persist, layoutKeys, layoutSongKeys, keyFor, colFor, kb, view } from './state.js';
 import { LEVELS, SONGS } from './levels.js';
-import { initAudio, setMusicTier, startBgm, stopBgm, sfxHit, sfxCombo, sfxMiss, sfxLevel, sfxTick, sfxFever, sfxGold, sfxBomb, sfxGameOver, duckBgm } from './audio.js';
+import { initAudio, setMusicTier, startBgm, stopBgm, sfxHit, sfxCombo, sfxMiss, sfxLevel, sfxTick, sfxFever, sfxGold, sfxBomb, sfxGameOver, sfxGuide, duckBgm } from './audio.js';
 import { fx, fxBoom, draw, drawSong } from './render.js';
 import { applySink, decayAnim } from './bear.js';
 import { on } from './events.js';
@@ -11,7 +11,7 @@ import * as ui from './ui.js';
 const flash = m => { flashMap[m] = performance.now() + 150; };
 const GOLD = ['#FFD166', '#FFE9A8']; // 踩中鼓点的金色特效调色板
 let advancing = false; // 过关进下一关时为真：让狂热槽跨关累积，不被 startGame 清零
-const BOMB_FROM_LEVEL = 20; // 0 基：进阶·穿指轨(第21关)起才出炸弹——五指位主体全程无炸弹，纯练习
+const BOMB_FROM_LEVEL = 24; // 0 基：进阶·穿指轨(第25关)起才出炸弹——五指位主体全程无炸弹，纯练习
 
 // 当前时刻离最近一拍有多近(ms)；用于踩点奖励。无拍源(beatMs=0)时返回极大值=永不踩中。
 function offBeatMs(now) {
@@ -143,6 +143,7 @@ function songPress(midi) {
     // 弹错：清连击 + 轻提示，明确"该弹哪个音"，但不前进、不中断
     game.combo = 0;
     if (k) fx(k.cx, kb.keyTop, ['#888', '#aaa'], false); sfxMiss();
+    sfxGuide(target.midi); // 弹错就把"该弹的音"播给你听——不懂乐理也能照着找
     game.shake = Math.min(7, game.shake + 4);
     popups.push({ x: k ? k.cx : view.W / 2, y: kb.keyTop - 100, text: '试试 ' + target.pitch, color: '#FFC371', life: 1.1, vy: -1.2, scale: 1 });
     ui.refreshHUD();
@@ -171,6 +172,8 @@ async function startSong(songKey, levelIdx = 0) {
   layoutSongKeys(game.song.notes);
   game.running = true; game.paused = false;
   ui.setMode('song'); ui.refreshHUD(); ui.hideOverlay(); ui.enterPlayUI();
+  ui.showToast('🎵 跟着白色高亮圈弹，弹对自动跳到下一个音', '#5DCAA5');
+  const first = game.song.notes[0]; if (first) sfxGuide(first.midi); // 进场先把第一个音播给你听
 }
 
 function songClear() {

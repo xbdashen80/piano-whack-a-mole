@@ -191,6 +191,11 @@ export function sfxCombo() {
     notes.forEach((n, i) => arpSynth.triggerAttackRelease(n, '16n', t + i * 0.05)); bump(t + notes.length * 0.05);
   });
 }
+// 歌曲模式引导音：把"当前该弹的那个音"用柔和音色播一下，让没学过乐理/不熟这首歌的人也能"听到"该弹哪个音。
+export function sfxGuide(midi) {
+  if (!audio.sfxOn || !audio.ready) return;
+  safe(() => { const note = Tone.Frequency(midi, 'midi').toNote(); const t = sfxBase(); arpSynth.triggerAttackRelease(note, '8n', t, 0.5); bump(t); });
+}
 export function sfxLevel() {
   if (!audio.sfxOn || !audio.ready) return;
   safe(() => {
