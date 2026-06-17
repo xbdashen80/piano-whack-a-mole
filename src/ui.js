@@ -10,9 +10,23 @@ const $ = id => document.getElementById(id);
 let primaryAction = null;
 export function triggerPrimary() { if (primaryAction) primaryAction(); }
 
+// 切换顶部进度条文案：打地鼠按"还差几分"，歌曲模式按"还剩几个音"。只在开局调一次，避免每帧改 DOM。
+export function setMode(mode) {
+  $('goalLabel').innerHTML = mode === 'song'
+    ? '还剩 <b id="goalRemain">0</b> 个音'
+    : '距离过关还差 <b id="goalRemain">0</b> 分';
+}
+
 export function refreshHUD() {
   $('score').textContent = game.score; $('combo').textContent = game.combo;
   $('best').textContent = prog.best;
+  if (game.mode === 'song' && game.song) {
+    const s = game.song, total = s.notes.length;
+    $('lvlName').textContent = s.title + ' · 关卡' + (s.levelIdx + 1) + ' ' + s.name;
+    $('goalRemain').textContent = Math.max(0, total - s.ptr);
+    $('goalBar').style.width = Math.min(100, s.ptr / total * 100) + '%';
+    return;
+  }
   $('lvlName').textContent = (game.curLevel + 1) + ' · ' + LEVELS[game.curLevel].t + ' · ' + MUSIC_NAMES[LEVELS[game.curLevel].music || 0];
   const goal = LEVELS[game.curLevel].goal; $('goalRemain').textContent = Math.max(0, goal - game.score);
   $('goalBar').style.width = Math.min(100, game.score / goal * 100) + '%';
@@ -92,11 +106,46 @@ export function showGameOver() {
   primaryAction = () => emit('start');
 }
 
-// ---------- 按钮绑定 ----------
-export function bindButtons() {
+// ---------- 歌曲模式结算 ----------
+export function showSongClear() {
+  const s = game.song; const ov = $('overlay'); ov.classList.remove('hidden');
+  ov.innerHTML = `<h1 style="color:#5DCAA5">🎉 《${s.title}》关卡 ${s.levelIdx + 1} 弹完啦！</h1>
+    <div id="resultStats"><div><b style="color:#fff">${game.score}</b>本关得分</div><div><b style="color:#5DCAA5">${prog.best}</b>最高分</div></div>
+    <p>你把《${s.title}》这一段整条弹下来了——这就是它的骨架！</p>
+    <div id="scBtns" style="display:flex;gap:12px;flex-wrap:wrap;justify-content:center;"></div>
+    <p style="font-size:13px;color:rgba(255,255,255,0.5);">按 <b style="color:#9DB4FF">空格</b> 或 <b style="color:#9DB4FF">连敲两下同一个琴键</b> 再弹一次</p>`;
+  const wrap = $('scBtns');
+  const again = document.createElement('button'); again.textContent = '↻ 再弹一次';
+  again.style.cssText = 'background:rgba(80,120,255,0.92);border:none;font-size:17px;padding:13px 30px;font-weight:600;border-radius:10px;';
+  again.onclick = () => emit('startSong', s.key, s.levelIdx); wrap.appendChild(again);
+  const back = document.createElement('button'); back.textContent = '🏠 返回主菜单'; back.style.cssText = 'font-size:17px;padding:13px 30px;';
+  back.onclick = () => showStart(); wrap.appendChild(back);
+  primaryAction = () => emit('startSong', s.key, s.levelIdx); // 免鼠标主操作=再弹一次
+}
+
+// ---------- 按钮绑定 / 开始界面 ----------
+let startHTML = null; // 开始界面的原始 HTML，返回主菜单时还原（歌曲模式与打地鼠都从这里进）
+
+// 绑定开始界面内部控件（打地鼠开始 / 歌曲模式入口 / 选关网格 / 键位预览）。可重复调用。
+function bindStart() {
   $('bigPlay').onclick = () => emit('start');
-  primaryAction = () => emit('start'); // 开始界面默认主操作=开始当前选中关
+  const sb = $('songBtn'); if (sb) sb.onclick = () => emit('startSong', 'laputa', 0);
+  primaryAction = () => emit('start'); // 开始界面默认主操作=开始打地鼠当前选中关
+  buildLevelGrid(); renderKbPreview();
+}
+
+// 从结算页返回开始界面：复位为打地鼠模式 + 还原开始界面 HTML 并重新绑定。
+export function showStart() {
+  game.mode = 'whack'; game.song = null; layoutKeys(); setMode('whack');
+  const ov = $('overlay'); ov.classList.remove('hidden');
+  if (startHTML != null) ov.innerHTML = startHTML;
+  bindStart(); refreshHUD();
+}
+
+export function bindButtons() {
+  startHTML = $('overlay').innerHTML; // 首次装配时抓取原始开始界面
   $('pauseBtn').onclick = () => emit('pauseToggle');
   $('bgmBtn').onclick = () => { const on = !$('bgmBtn').classList.contains('on'); $('bgmBtn').classList.toggle('on', on); setBgm(on); };
   $('sfxBtn').onclick = () => { const on = !$('sfxBtn').classList.contains('on'); $('sfxBtn').classList.toggle('on', on); setSfx(on); };
+  bindStart();
 }

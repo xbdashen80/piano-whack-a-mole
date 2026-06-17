@@ -1,8 +1,8 @@
 // ================= 主循环 + 状态机 + 判定 + 计分 + 过关/失败 =================
-import { game, bear, particles, ripples, popups, flashMap, prog, persist, layoutKeys, keyFor, colFor, kb, view } from './state.js';
-import { LEVELS } from './levels.js';
-import { initAudio, setMusicTier, startBgm, sfxHit, sfxCombo, sfxMiss, sfxLevel, sfxTick, sfxFever, sfxGold, sfxBomb, sfxGameOver, duckBgm } from './audio.js';
-import { fx, fxBoom, draw } from './render.js';
+import { game, bear, particles, ripples, popups, flashMap, prog, persist, layoutKeys, layoutSongKeys, keyFor, colFor, kb, view } from './state.js';
+import { LEVELS, SONGS } from './levels.js';
+import { initAudio, setMusicTier, startBgm, stopBgm, sfxHit, sfxCombo, sfxMiss, sfxLevel, sfxTick, sfxFever, sfxGold, sfxBomb, sfxGameOver, duckBgm } from './audio.js';
+import { fx, fxBoom, draw, drawSong } from './render.js';
 import { applySink, decayAnim } from './bear.js';
 import { on } from './events.js';
 import { logErr, spawnWatchdog } from './diagnostics.js';
@@ -53,7 +53,9 @@ function endFever() { game.fever = false; game.feverGauge = 0; }
 
 function press(midi, vel) {
   try {
-    if (!game.running) return; flash(midi);
+    if (!game.running) return;
+    if (game.mode === 'song') { songPress(midi); return; } // 歌曲模式走音高顺序判定
+    flash(midi);
     const now = performance.now();
     const k = keyFor(midi);
     const pressed = game.moles.find(mm => mm.midi === midi);
@@ -111,16 +113,80 @@ function checkPass() { if (game.score >= LEVELS[game.curLevel].goal) levelClear(
 // 每拍触发(来自鼓机的 'beat' 事件，已对齐到可听见的鼓点)：刷新节拍锚点 + 卡鼓点生成地鼠。
 function onBeat(beatMs, strong) {
   game.lastBeatAt = performance.now(); game.beatMs = beatMs;
-  if (!game.running || game.paused) return;
+  if (!game.running || game.paused || game.mode === 'song') return;
   if (game.lastBeatAt >= game.nextSpawn && game.moles.length < curMaxActive()) {
     spawnMole();
     game.nextSpawn = game.lastBeatAt + nextSpawnGap();
   }
 }
 
+// ================= 歌曲模式：按音高顺序弹一首真歌 =================
+// 共用 'press' 输入与主循环；判定只看音高顺序（关卡 1 不判节奏、不判指法——输入层无指法信息，
+// finger 仅作教学提示）。弹错只给提示、不中断、不失败（零基础友好，副作用绝不阻断状态机）。
+function songPress(midi) {
+  const s = game.song; if (!s || game.paused) return;
+  const target = s.notes[s.ptr]; if (!target) return;
+  flash(midi);
+  const k = keyFor(midi);
+  if (midi === target.midi) {
+    s.ptr++; game.combo++;
+    sfxHit(midi, true, 0); // 用真实音高发声，让玩家"听见自己弹的旋律"
+    if (k) fx(k.cx, kb.keyTop, colFor(midi), true);
+    const gain = 10 + game.combo * 2; game.score += gain;
+    game.comboFlash = 1; game.shake = Math.min(8, game.shake + 3);
+    popups.push({ x: k ? k.cx : view.W / 2, y: kb.keyTop - 110, text: '♪ +' + gain, color: '#9DE5B5', life: 1, vy: -1.6, scale: 1.1 });
+    bear.flash = 1;
+    if (game.combo > 0 && game.combo % 10 === 0) { ui.showToast('🎵 连对 ' + game.combo + ' 个音！', '#5DCAA5'); sfxCombo(); }
+    ui.refreshHUD();
+    if (s.ptr >= s.notes.length) songClear();
+  } else {
+    // 弹错：清连击 + 轻提示，明确"该弹哪个音"，但不前进、不中断
+    game.combo = 0;
+    if (k) fx(k.cx, kb.keyTop, ['#888', '#aaa'], false); sfxMiss();
+    game.shake = Math.min(7, game.shake + 4);
+    popups.push({ x: k ? k.cx : view.W / 2, y: kb.keyTop - 100, text: '试试 ' + target.pitch, color: '#FFC371', life: 1.1, vy: -1.2, scale: 1 });
+    ui.refreshHUD();
+  }
+}
+
+function tickSong(now, dt) {
+  // 打击感瞬时量衰减（与打地鼠同款，song 无沉熊/生成逻辑）
+  if (game.shake > 0.1) game.shake *= 0.85; else game.shake = 0;
+  if (game.comboFlash > 0.01) game.comboFlash *= 0.86; else game.comboFlash = 0;
+  if (game.impactFlash > 0.01) game.impactFlash *= 0.82; else game.impactFlash = 0;
+  drawSong(now);
+}
+
+async function startSong(songKey, levelIdx = 0) {
+  const song = SONGS[songKey]; if (!song) return;
+  const lvl = song.levels[levelIdx]; if (!lvl) return;
+  try { await initAudio(); stopBgm(); } catch (e) { logErr('initAudio', e); } // 关卡 1 无伴奏：静掉鼓机
+  game.mode = 'song';
+  game.song = { key: songKey, levelIdx, title: song.title, name: lvl.name, notes: lvl.rightHand.slice(), ptr: 0 };
+  game.score = 0; game.combo = 0; game.moles = [];
+  game.fever = false; game.feverGauge = 0;
+  game.shake = 0; game.comboFlash = 0; game.impactFlash = 0; game.bombFlash = 0; game.hitStop = 0;
+  Object.assign(bear, { pos: 0.2, vel: 0, hop: 0, flash: 0 });
+  particles.length = 0; ripples.length = 0; popups.length = 0; game.lastTickTime = 0;
+  layoutSongKeys(game.song.notes);
+  game.running = true; game.paused = false;
+  ui.setMode('song'); ui.refreshHUD(); ui.hideOverlay(); ui.enterPlayUI();
+}
+
+function songClear() {
+  // 状态/存档/弹窗优先，音效最后（P0 教训：副作用绝不阻断过关流程）
+  game.running = false; const s = game.song;
+  if (game.score > prog.best) { prog.best = game.score; persist(); }
+  prog.songProgress = prog.songProgress || {};
+  prog.songProgress[s.key] = Math.max(prog.songProgress[s.key] || 0, s.levelIdx + 1); persist();
+  ui.exitPlayUI(); ui.showSongClear();
+  sfxLevel();
+}
+
 function tick(now) {
   try {
     const dt = game.lastTickTime ? Math.min(0.05, (now - game.lastTickTime) / 1000) : 0.016; game.lastTickTime = now;
+    if (game.mode === 'song') { tickSong(now, dt); requestAnimationFrame(tick); return; }
     // 命中顿帧：定格游戏逻辑(不沉、不生成)，但仍重绘——震屏每帧随机偏移=原地猛抖，闪光保持，冲击力拉满
     if (game.hitStop > 0) { game.hitStop -= dt * 1000; draw(now); requestAnimationFrame(tick); return; }
     game.waterPhase += dt * 1.5;
@@ -163,6 +229,7 @@ function tick(now) {
 
 async function startGame(i) {
   if (typeof i === 'number') game.curLevel = i;
+  game.mode = 'whack'; game.song = null; ui.setMode('whack'); // 从歌曲模式切回打地鼠时复位
   try { await initAudio(); setMusicTier(LEVELS[game.curLevel].music || 0); startBgm(); } catch (e) { logErr('initAudio', e); }
   game.score = 0; game.combo = 0; game.moles = [];
   game.fever = false; if (!advancing) game.feverGauge = 0; advancing = false; // 过关保留狂热槽，新开/重来才清零
@@ -210,6 +277,7 @@ export function initGame() {
   on('press', midi => pressForAdvance(midi));
   on('beat', (ms, strong) => onBeat(ms, strong));
   on('start', i => startGame(i));
+  on('startSong', (key, idx) => startSong(key, idx));
   on('pauseToggle', pauseToggle);
   on('gameOver', gameOver);
 }
