@@ -166,6 +166,17 @@ export function setSfx(on) { audio.sfxOn = on; }
 // 失败时把背景乐压低
 export function duckBgm() { if (bgmBus) bgmBus.gain.rampTo(0.15, 0.5); }
 
+// 歌曲模式（关卡 1 无伴奏）：静掉背景鼓机/拍源，让玩家只听见自己弹的音。
+// 只动音量与时钟、不碰 audio.bgmOn，回到打地鼠 startBgm 时按用户开关恢复。
+export function stopBgm() {
+  if (!audio.ready) return;
+  safe(() => {
+    if (bgmBus) bgmBus.gain.rampTo(0, 0.25);
+    if (drumLoop && drumLoop.state === 'started') drumLoop.stop();
+    Tone.Transport.stop();
+  });
+}
+
 export function sfxHit(midi, perfect, comboN) {
   if (!audio.sfxOn || !audio.ready) return;
   safe(() => {

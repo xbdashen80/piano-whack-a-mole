@@ -20,6 +20,8 @@ export function persist() { try { localStorage.setItem(SAVE, JSON.stringify(prog
 // ---------- 可变游戏状态 ----------
 export const game = {
   curLevel: 0,
+  mode: 'whack',   // 'whack'=打地鼠(默认) | 'song'=歌曲模式；两套呈现/判定共用主循环与输入
+  song: null,      // 歌曲模式运行态 { key, levelIdx, title, name, notes, ptr }；whack 时为 null
   running: false,
   paused: false,
   breaking: false,
@@ -67,6 +69,22 @@ export function layoutKeys() {
   kb.activeKeyMidis.forEach((m, i) => kb.keys.push({ midi: m, x: i * ww, w: ww, cx: i * ww + ww / 2, finger: fingerFor(i, n) }));
 }
 
+// 歌曲模式键盘：不受 LEVELS 把位约束，按本关音符的实际音域铺出整段白键（C D E F G A B）。
+// 歌曲音高可能超出打地鼠的 WHITE 表（如《天空之城》关卡 1 用到 A5=81），故这里现算白键，不复用 WHITE。
+const isWhiteMidi = m => [0, 2, 4, 5, 7, 9, 11].includes(((m % 12) + 12) % 12);
+export function whiteKeysBetween(lo, hi) { const a = []; for (let m = lo; m <= hi; m++) if (isWhiteMidi(m)) a.push(m); return a; }
+
+export function layoutSongKeys(notes) {
+  kb.keys = [];
+  const ms = notes.map(n => n.midi); const lo = Math.min(...ms), hi = Math.max(...ms);
+  const whites = whiteKeysBetween(lo, hi);
+  kb.activeKeyMidis = whites; // 键盘兜底 a~l 跟着映射到这些键
+  kb.keyH = Math.min(230, view.H * 0.34);
+  kb.keyTop = view.H - kb.keyH;
+  const ww = view.W / whites.length;
+  whites.forEach((m, i) => kb.keys.push({ midi: m, x: i * ww, w: ww, cx: i * ww + ww / 2, finger: 0 }));
+}
+
 export function keyFor(m) { return kb.keys.find(k => k.midi === m); }
 
 export function colFor(m) {
@@ -77,5 +95,6 @@ export function colFor(m) {
 export function resize() {
   view.W = canvas.width = innerWidth;
   view.H = canvas.height = innerHeight;
-  layoutKeys();
+  if (game.mode === 'song' && game.song) layoutSongKeys(game.song.notes);
+  else layoutKeys();
 }

@@ -74,6 +74,62 @@ export const LEVELS = [
   { keys: 12, off: 0, spawn: [1000, 1320], ttl: 2300, maxActive: 3, goal: 2230, sink: 0.022, bounce: 0.12, music: 4, t: '进阶·穿指 疯狂' },
 ];
 
+// ===================== 歌曲模式（Song Mode）数据 =====================
+// 与打地鼠的 LEVELS 并列、互不影响。一首歌 = 一组由易到难的渐进关卡，每关一串音符。
+// 音符 { pitch(仅供人读), midi(★判定以此为准), finger(1-5 右手指, 仅作教学提示), duration, startBeat }。
+// 第一阶段只实现《天空之城》关卡 1（C 大调骨架, 全四分音符, 不判节奏, 只判音高顺序）。
+export const SONGS = {
+  laputa: {
+    title: '天空之城', key: 'C', timeSignature: '4/4',
+    levels: [
+      {
+        id: 1, name: '认骨架', bpm: 50,
+        rightHand: [
+          // 小节1 (startBeat 0-3)
+          { pitch: 'E5', midi: 76, finger: 3, duration: 'quarter', startBeat: 0 },
+          { pitch: 'D5', midi: 74, finger: 2, duration: 'quarter', startBeat: 1 },
+          { pitch: 'B4', midi: 71, finger: 1, duration: 'quarter', startBeat: 2 },
+          { pitch: 'A4', midi: 69, finger: 1, duration: 'quarter', startBeat: 3 },
+          // 小节2 (4-7)，第4拍休止
+          { pitch: 'B4', midi: 71, finger: 1, duration: 'quarter', startBeat: 4 },
+          { pitch: 'E5', midi: 76, finger: 3, duration: 'quarter', startBeat: 5 },
+          { pitch: 'E5', midi: 76, finger: 3, duration: 'quarter', startBeat: 6 },
+          // 小节3 (8-11)
+          { pitch: 'A5', midi: 81, finger: 5, duration: 'quarter', startBeat: 8 },
+          { pitch: 'G5', midi: 79, finger: 4, duration: 'quarter', startBeat: 9 },
+          { pitch: 'E5', midi: 76, finger: 2, duration: 'quarter', startBeat: 10 },
+          { pitch: 'D5', midi: 74, finger: 1, duration: 'quarter', startBeat: 11 },
+          // 小节4 (12-15)，第4拍休止
+          { pitch: 'E5', midi: 76, finger: 2, duration: 'quarter', startBeat: 12 },
+          { pitch: 'G5', midi: 79, finger: 4, duration: 'quarter', startBeat: 13 },
+          { pitch: 'G5', midi: 79, finger: 4, duration: 'quarter', startBeat: 14 },
+          // 小节5 (16-19)
+          { pitch: 'F5', midi: 77, finger: 3, duration: 'quarter', startBeat: 16 },
+          { pitch: 'E5', midi: 76, finger: 2, duration: 'quarter', startBeat: 17 },
+          { pitch: 'D5', midi: 74, finger: 1, duration: 'quarter', startBeat: 18 },
+          { pitch: 'C5', midi: 72, finger: 1, duration: 'quarter', startBeat: 19 },
+          // 小节6 (20-23)
+          { pitch: 'D5', midi: 74, finger: 1, duration: 'quarter', startBeat: 20 },
+          { pitch: 'E5', midi: 76, finger: 2, duration: 'quarter', startBeat: 21 },
+          { pitch: 'C5', midi: 72, finger: 1, duration: 'quarter', startBeat: 22 },
+          { pitch: 'B4', midi: 71, finger: 1, duration: 'quarter', startBeat: 23 },
+          // 小节7 (24-27)
+          { pitch: 'A4', midi: 69, finger: 1, duration: 'quarter', startBeat: 24 },
+          { pitch: 'B4', midi: 71, finger: 2, duration: 'quarter', startBeat: 25 },
+          { pitch: 'C5', midi: 72, finger: 3, duration: 'quarter', startBeat: 26 },
+          { pitch: 'E5', midi: 76, finger: 5, duration: 'quarter', startBeat: 27 },
+          // 小节8 (28-31)，第4拍休止
+          { pitch: 'D5', midi: 74, finger: 2, duration: 'quarter', startBeat: 28 },
+          { pitch: 'B4', midi: 71, finger: 1, duration: 'quarter', startBeat: 29 },
+          { pitch: 'A4', midi: 69, finger: 1, duration: 'quarter', startBeat: 30 }
+        ],
+        leftHand: []
+      }
+      // 关卡 2(真实节奏)/4(左手根音)/7(配伴奏) 待补：先把关卡 1 整条链路跑通
+    ]
+  }
+};
+
 // 5档递进背景乐:每档是 2~4 小节乐句(每行=1 小节=16 步),靠旋律变奏 + 段末过门(fill)
 // 减少循环重复感。和声骨架统一 C–A–F–G(i–vi–IV–V),pad 跟贝斯根音铺底。
 // _ = 该步不触发(null 别名,纯为让谱子排版整齐可读)。drumLoop 用 step % 数组长度 循环。
