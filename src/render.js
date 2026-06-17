@@ -168,8 +168,8 @@ export function draw(now) {
     ctx.fillStyle = 'rgba(40,40,60,0.6)'; ctx.font = '15px sans-serif'; ctx.fillText(midiName(k.midi), k.cx, kb.keyTop + kb.keyH - 16);
   });
   if (game.running) {
-    ctx.fillStyle = 'rgba(255,255,255,0.4)'; ctx.font = '12px sans-serif'; ctx.textAlign = 'center';
-    ctx.fillText('右手', view.W - 70, kb.keyTop - 150); drawHand(view.W - 70, kb.keyTop - 130, 0.85);
+    ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.font = 'bold 16px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText('右手', view.W - 115, kb.keyTop - 225); drawHand(view.W - 115, kb.keyTop - 110, 1.7);
   }
   drawFloating();
   ctx.restore(); // 结束震屏位移
@@ -270,8 +270,8 @@ export function drawSong(now) {
     ctx.fillText(midiName(k.midi), k.cx, kb.keyTop + kb.keyH - 16);
   });
   if (game.running) {
-    ctx.fillStyle = 'rgba(255,255,255,0.4)'; ctx.font = '12px sans-serif'; ctx.textAlign = 'center';
-    ctx.fillText('右手', view.W - 70, kb.keyTop - 150); drawHand(view.W - 70, kb.keyTop - 130, 0.85);
+    ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.font = 'bold 16px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText('右手', view.W - 115, kb.keyTop - 225); drawHand(view.W - 115, kb.keyTop - 110, 1.7);
   }
   drawFloating();
   ctx.restore();
