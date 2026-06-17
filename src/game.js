@@ -1,7 +1,7 @@
 // ================= 主循环 + 状态机 + 判定 + 计分 + 过关/失败 =================
 import { game, bear, particles, ripples, popups, flashMap, prog, persist, layoutKeys, layoutSongKeys, keyFor, colFor, kb, view } from './state.js';
 import { LEVELS, SONGS } from './levels.js';
-import { initAudio, setMusicTier, startBgm, stopBgm, sfxHit, sfxCombo, sfxMiss, sfxLevel, sfxTick, sfxFever, sfxGold, sfxBomb, sfxGameOver, sfxGuide, duckBgm } from './audio.js';
+import { initAudio, setMusicTier, startBgm, stopBgm, sfxHit, sfxCombo, sfxMiss, sfxLevel, sfxTick, sfxFever, sfxGold, sfxBomb, sfxGameOver, sfxGuide, sfxPiano, duckBgm } from './audio.js';
 import { fx, fxBoom, draw, drawSong } from './render.js';
 import { applySink, decayAnim } from './bear.js';
 import { on } from './events.js';
@@ -131,7 +131,7 @@ function songPress(midi) {
   const k = keyFor(midi);
   if (midi === target.midi) {
     s.ptr++; game.combo++;
-    sfxHit(midi, true, 0); // 用真实音高发声，让玩家"听见自己弹的旋律"
+    sfxPiano(midi, 0.6); // 钢琴音色发声，让玩家"听见自己弹的旋律"（与预演同款音色）
     if (k) fx(k.cx, kb.keyTop, colFor(midi), true);
     const gain = 10 + game.combo * 2; game.score += gain;
     game.comboFlash = 1; game.shake = Math.min(8, game.shake + 3);
@@ -164,12 +164,16 @@ function tickSong(now, dt) {
 // 直到玩家再次关掉开关。用累计时间(previewMs)驱动而非墙钟，天然随暂停/掉帧而停，不会跳拍。
 function previewStep(dt) {
   const s = game.song, notes = s.notes; if (!notes.length) return;
-  const beatMs = 60000 / (s.bpm || 60); const lastBeat = notes[notes.length - 1].startBeat;
+  const beatMs = 60000 / (s.performBpm || s.bpm || 60); const beatSec = beatMs / 1000; // 真实演奏速度
+  const lastBeat = notes[notes.length - 1].startBeat;
   s.previewMs += dt * 1000;
   let i = 0; while (i < notes.length && notes[i].startBeat * beatMs <= s.previewMs) i++;
   const sounding = i - 1; // 已到点的最后一个音
   if (sounding > s.previewLast) {
-    for (let j = s.previewLast + 1; j <= sounding; j++) { sfxHit(notes[j].midi, true, 0); flash(notes[j].midi); } // 用真实音高把旋律放给你听
+    for (let j = s.previewLast + 1; j <= sounding; j++) {
+      const nx = notes[j + 1]; const durSec = Math.max(0.25, Math.min(2.5, (nx ? nx.startBeat - notes[j].startBeat : 2) * beatSec)); // 按到下一个音的间隔自然延音
+      sfxPiano(notes[j].midi, durSec); flash(notes[j].midi); // 真实钢琴音色把旋律放给你听
+    }
     s.previewLast = sounding; s.ptr = sounding; ui.refreshHUD();
   }
   if (s.previewMs >= (lastBeat + 2) * beatMs) { s.previewMs = 0; s.previewLast = -1; s.ptr = 0; ui.refreshHUD(); } // 末尾留两拍，循环
@@ -187,7 +191,7 @@ async function startSong(songKey, levelIdx = 0) {
   const lvl = song.levels[levelIdx]; if (!lvl) return;
   try { await initAudio(); stopBgm(); } catch (e) { logErr('initAudio', e); } // 关卡 1 无伴奏：静掉鼓机
   game.mode = 'song';
-  game.song = { key: songKey, levelIdx, title: song.title, name: lvl.name, bpm: lvl.bpm || 60, notes: lvl.rightHand.slice(), ptr: 0, preview: false, previewMs: 0, previewLast: -1 };
+  game.song = { key: songKey, levelIdx, title: song.title, name: lvl.name, bpm: lvl.bpm || 60, performBpm: song.bpm || lvl.bpm || 70, notes: lvl.rightHand.slice(), ptr: 0, preview: false, previewMs: 0, previewLast: -1 };
   game.score = 0; game.combo = 0; game.moles = [];
   game.fever = false; game.feverGauge = 0;
   game.shake = 0; game.comboFlash = 0; game.impactFlash = 0; game.bombFlash = 0; game.hitStop = 0;

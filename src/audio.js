@@ -20,7 +20,7 @@ function bump(t) { if (t > sfxClock) sfxClock = t; }
 function safe(fn) { try { fn(); } catch (e) { logErr('audio', e); } }
 
 // 音效链
-let hitSynth, hitSynth2, arpSynth, loseSynth, tickSynth, sfxReverb, sfxBus, boomNoise, boomFilter, boomDrive, boomSub;
+let hitSynth, hitSynth2, arpSynth, loseSynth, tickSynth, sfxReverb, sfxBus, boomNoise, boomFilter, boomDrive, boomSub, pianoSynth;
 // 背景乐：主控链 + 鼓组分层 + 贝斯/sub + 旋律 + 铺底 pad
 let limiter, bgmComp, bgmEq, bgmBus, bgmReverb, bgmReverbSend, pumpGain, drumDrive;
 let kick, kickClick, kickClickHP, snareNoise, snareBody, hat, hatHP, bass, sub, lead, pad, padFilter, drumLoop;
@@ -49,6 +49,12 @@ export async function initAudio() {
   arpSynth = new Tone.Synth({ oscillator: { type: 'square' }, envelope: { attack: 0.001, decay: 0.1, sustain: 0.05, release: 0.1 } }).connect(sfxBus); arpSynth.volume.value = -7;
   loseSynth = new Tone.Synth({ oscillator: { type: 'sawtooth' }, envelope: { attack: 0.002, decay: 0.25, sustain: 0, release: 0.1 } }).connect(sfxBus); loseSynth.volume.value = -8;
   tickSynth = new Tone.NoiseSynth({ noise: { type: 'white' }, envelope: { attack: 0.001, decay: 0.03, sustain: 0 } }).connect(sfxBus); tickSynth.volume.value = -22;
+  // 钢琴味音色（纯合成、不引采样）：复音叠音 + 多泛音三角波 + 快起音/长衰减/低延音，过 sfxReverb 添琴体共鸣。
+  // 歌曲模式(预演示范 + 弹对 + 引导音)统一用它，听感接近真钢琴，区别于打地鼠的方波音效。
+  pianoSynth = new Tone.PolySynth(Tone.Synth, {
+    oscillator: { type: 'custom', partials: [1, 0.5, 0.32, 0.18, 0.1, 0.05] },
+    envelope: { attack: 0.004, decay: 1.5, sustain: 0.05, release: 0.7 },
+  }).connect(sfxBus); pianoSynth.volume.value = -7;
   // 炸弹爆炸：棕噪经失真+低通=带颗粒的轰鸣，再叠一层低频 sub 增加胸腔冲击
   boomFilter = new Tone.Filter(1100, 'lowpass').connect(sfxBus);
   boomDrive = new Tone.Distortion({ distortion: 0.6, wet: 0.7 }).connect(boomFilter);
@@ -191,10 +197,15 @@ export function sfxCombo() {
     notes.forEach((n, i) => arpSynth.triggerAttackRelease(n, '16n', t + i * 0.05)); bump(t + notes.length * 0.05);
   });
 }
-// 歌曲模式引导音：把"当前该弹的那个音"用柔和音色播一下，让没学过乐理/不熟这首歌的人也能"听到"该弹哪个音。
+// 歌曲模式引导音：把"当前该弹的那个音"用钢琴音色播一下，让没学过乐理/不熟这首歌的人也能"听到"该弹哪个音。
 export function sfxGuide(midi) {
   if (!audio.sfxOn || !audio.ready) return;
-  safe(() => { const note = Tone.Frequency(midi, 'midi').toNote(); const t = sfxBase(); arpSynth.triggerAttackRelease(note, '8n', t, 0.5); bump(t); });
+  safe(() => { const note = Tone.Frequency(midi, 'midi').toNote(); const t = sfxBase(); pianoSynth.triggerAttackRelease(note, 0.5, t, 0.55); bump(t); });
+}
+// 歌曲模式钢琴发声：预演示范 / 弹对都用它，按真实音高 + 给定时长(秒)演奏，听感接近真钢琴。
+export function sfxPiano(midi, durSec = 0.5, vel = 0.9) {
+  if (!audio.sfxOn || !audio.ready) return;
+  safe(() => { const note = Tone.Frequency(midi, 'midi').toNote(); const t = sfxBase(); pianoSynth.triggerAttackRelease(note, durSec, t, vel); bump(t); });
 }
 export function sfxLevel() {
   if (!audio.sfxOn || !audio.ready) return;

@@ -99,7 +99,8 @@ export const LEVELS = [
 // 第一阶段只实现《天空之城》关卡 1（C 大调骨架, 全四分音符, 不判节奏, 只判音高顺序）。
 export const SONGS = {
   laputa: {
-    title: '天空之城', key: 'C', timeSignature: '4/4',
+    // bpm = 演奏速度（预演示范按它播，让你听到"最终效果"的节奏）；关卡里的 bpm 是慢练速度，二者不同
+    title: '天空之城', key: 'C', timeSignature: '4/4', bpm: 70,
     levels: [
       {
         id: 1, name: '认骨架', bpm: 50,
