@@ -60,6 +60,7 @@ button.on{background:rgba(80,160,120,0.3);border-color:rgba(80,200,140,0.5);}
   <button id="bgmBtn" class="on">🥁 鼓点</button>
   <button id="sfxBtn" class="on">🔊 音效</button>
   <button id="pauseBtn" class="hidden">暂停</button>
+  <button id="previewBtn" class="hidden">🎧 预演示范</button>
   <span id="status">检测钢琴中…</span>
 </div>
 <div id="goalWrap" class="hidden">
@@ -2056,6 +2057,14 @@ button.on{background:rgba(80,160,120,0.3);border-color:rgba(80,200,140,0.5);}
   }
   function setMode(mode) {
     $("goalLabel").innerHTML = mode === "song" ? '还剩 <b id="goalRemain">0</b> 个音' : '距离过关还差 <b id="goalRemain">0</b> 分';
+    const pv = $("previewBtn");
+    if (pv) pv.classList.toggle("hidden", mode !== "song");
+  }
+  function setPreview(on2) {
+    const b = $("previewBtn");
+    if (!b) return;
+    b.classList.toggle("on", on2);
+    b.textContent = on2 ? "⏹ 停止预演" : "🎧 预演示范";
   }
   function refreshHUD() {
     $("score").textContent = game.score;
@@ -2139,6 +2148,7 @@ button.on{background:rgba(80,160,120,0.3);border-color:rgba(80,200,140,0.5);}
   function exitPlayUI() {
     $("pauseBtn").classList.add("hidden");
     $("goalWrap").classList.add("hidden");
+    $("previewBtn").classList.add("hidden");
   }
   function setPaused(p) {
     $("pauseBtn").textContent = p ? "继续" : "暂停";
@@ -2225,6 +2235,7 @@ button.on{background:rgba(80,160,120,0.3);border-color:rgba(80,200,140,0.5);}
   function bindButtons() {
     startHTML = $("overlay").innerHTML;
     $("pauseBtn").onclick = () => emit("pauseToggle");
+    $("previewBtn").onclick = () => emit("previewToggle");
     $("bgmBtn").onclick = () => {
       const on2 = !$("bgmBtn").classList.contains("on");
       $("bgmBtn").classList.toggle("on", on2);
@@ -3177,6 +3188,7 @@ button.on{background:rgba(80,160,120,0.3);border-color:rgba(80,200,140,0.5);}
   function songPress(midi) {
     const s = game.song;
     if (!s || game.paused) return;
+    if (s.preview) return;
     const target = s.notes[s.ptr];
     if (!target) return;
     flash(midi);
@@ -3215,7 +3227,44 @@ button.on{background:rgba(80,160,120,0.3);border-color:rgba(80,200,140,0.5);}
     else game.comboFlash = 0;
     if (game.impactFlash > 0.01) game.impactFlash *= 0.82;
     else game.impactFlash = 0;
+    if (game.song && game.song.preview && !game.paused) previewStep(dt);
     drawSong(now);
+  }
+  function previewStep(dt) {
+    const s = game.song, notes = s.notes;
+    if (!notes.length) return;
+    const beatMs = 6e4 / (s.bpm || 60);
+    const lastBeat = notes[notes.length - 1].startBeat;
+    s.previewMs += dt * 1e3;
+    let i = 0;
+    while (i < notes.length && notes[i].startBeat * beatMs <= s.previewMs) i++;
+    const sounding = i - 1;
+    if (sounding > s.previewLast) {
+      for (let j = s.previewLast + 1; j <= sounding; j++) {
+        sfxHit(notes[j].midi, true, 0);
+        flash(notes[j].midi);
+      }
+      s.previewLast = sounding;
+      s.ptr = sounding;
+      refreshHUD();
+    }
+    if (s.previewMs >= (lastBeat + 2) * beatMs) {
+      s.previewMs = 0;
+      s.previewLast = -1;
+      s.ptr = 0;
+      refreshHUD();
+    }
+  }
+  function togglePreview() {
+    const s = game.song;
+    if (!s) return;
+    s.preview = !s.preview;
+    s.previewMs = 0;
+    s.previewLast = -1;
+    s.ptr = 0;
+    setPreview(s.preview);
+    refreshHUD();
+    showToast(s.preview ? "🎧 预演中：听节奏、看高亮的音；再点一下关闭即可开始练习" : "已关闭预演，从头开始练吧", s.preview ? "#9DB4FF" : "#5DCAA5");
   }
   async function startSong(songKey, levelIdx = 0) {
     const song = SONGS[songKey];
@@ -3229,7 +3278,7 @@ button.on{background:rgba(80,160,120,0.3);border-color:rgba(80,200,140,0.5);}
       logErr("initAudio", e);
     }
     game.mode = "song";
-    game.song = { key: songKey, levelIdx, title: song.title, name: lvl.name, notes: lvl.rightHand.slice(), ptr: 0 };
+    game.song = { key: songKey, levelIdx, title: song.title, name: lvl.name, bpm: lvl.bpm || 60, notes: lvl.rightHand.slice(), ptr: 0, preview: false, previewMs: 0, previewLast: -1 };
     game.score = 0;
     game.combo = 0;
     game.moles = [];
@@ -3249,10 +3298,11 @@ button.on{background:rgba(80,160,120,0.3);border-color:rgba(80,200,140,0.5);}
     game.running = true;
     game.paused = false;
     setMode("song");
+    setPreview(false);
     refreshHUD();
     hideOverlay();
     enterPlayUI();
-    showToast("🎵 跟着白色高亮圈弹，弹对自动跳到下一个音", "#5DCAA5");
+    showToast('🎵 跟着白色高亮圈弹，弹对自动跳到下一个音（想先听节奏可点上方"预演示范"）', "#5DCAA5");
     const first = game.song.notes[0];
     if (first) sfxGuide(first.midi);
   }
@@ -3423,6 +3473,7 @@ button.on{background:rgba(80,160,120,0.3);border-color:rgba(80,200,140,0.5);}
     on("beat", (ms, strong) => onBeat(ms, strong));
     on("start", (i) => startGame(i));
     on("startSong", (key, idx) => startSong(key, idx));
+    on("previewToggle", togglePreview);
     on("pauseToggle", pauseToggle);
     on("gameOver", gameOver);
   }
