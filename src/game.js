@@ -125,6 +125,7 @@ function onBeat(beatMs, strong) {
 // finger 仅作教学提示）。弹错只给提示、不中断、不失败（零基础友好，副作用绝不阻断状态机）。
 function songPress(midi) {
   const s = game.song; if (!s || game.paused) return;
+  if (s.preview) return; // 预演示范中：忽略玩家输入，只看/听示范
   const target = s.notes[s.ptr]; if (!target) return;
   flash(midi);
   const k = keyFor(midi);
@@ -155,7 +156,30 @@ function tickSong(now, dt) {
   if (game.shake > 0.1) game.shake *= 0.85; else game.shake = 0;
   if (game.comboFlash > 0.01) game.comboFlash *= 0.86; else game.comboFlash = 0;
   if (game.impactFlash > 0.01) game.impactFlash *= 0.82; else game.impactFlash = 0;
+  if (game.song && game.song.preview && !game.paused) previewStep(dt);
   drawSong(now);
+}
+
+// 预演示范：按本关 bpm + 每个音的拍位，自动发声 + 推进高亮（谱面随之滚动），整首放完留两拍再从头循环，
+// 直到玩家再次关掉开关。用累计时间(previewMs)驱动而非墙钟，天然随暂停/掉帧而停，不会跳拍。
+function previewStep(dt) {
+  const s = game.song, notes = s.notes; if (!notes.length) return;
+  const beatMs = 60000 / (s.bpm || 60); const lastBeat = notes[notes.length - 1].startBeat;
+  s.previewMs += dt * 1000;
+  let i = 0; while (i < notes.length && notes[i].startBeat * beatMs <= s.previewMs) i++;
+  const sounding = i - 1; // 已到点的最后一个音
+  if (sounding > s.previewLast) {
+    for (let j = s.previewLast + 1; j <= sounding; j++) { sfxHit(notes[j].midi, true, 0); flash(notes[j].midi); } // 用真实音高把旋律放给你听
+    s.previewLast = sounding; s.ptr = sounding; ui.refreshHUD();
+  }
+  if (s.previewMs >= (lastBeat + 2) * beatMs) { s.previewMs = 0; s.previewLast = -1; s.ptr = 0; ui.refreshHUD(); } // 末尾留两拍，循环
+}
+
+function togglePreview() {
+  const s = game.song; if (!s) return;
+  s.preview = !s.preview; s.previewMs = 0; s.previewLast = -1; s.ptr = 0;
+  ui.setPreview(s.preview); ui.refreshHUD();
+  ui.showToast(s.preview ? '🎧 预演中：听节奏、看高亮的音；再点一下关闭即可开始练习' : '已关闭预演，从头开始练吧', s.preview ? '#9DB4FF' : '#5DCAA5');
 }
 
 async function startSong(songKey, levelIdx = 0) {
@@ -163,7 +187,7 @@ async function startSong(songKey, levelIdx = 0) {
   const lvl = song.levels[levelIdx]; if (!lvl) return;
   try { await initAudio(); stopBgm(); } catch (e) { logErr('initAudio', e); } // 关卡 1 无伴奏：静掉鼓机
   game.mode = 'song';
-  game.song = { key: songKey, levelIdx, title: song.title, name: lvl.name, notes: lvl.rightHand.slice(), ptr: 0 };
+  game.song = { key: songKey, levelIdx, title: song.title, name: lvl.name, bpm: lvl.bpm || 60, notes: lvl.rightHand.slice(), ptr: 0, preview: false, previewMs: 0, previewLast: -1 };
   game.score = 0; game.combo = 0; game.moles = [];
   game.fever = false; game.feverGauge = 0;
   game.shake = 0; game.comboFlash = 0; game.impactFlash = 0; game.bombFlash = 0; game.hitStop = 0;
@@ -171,8 +195,8 @@ async function startSong(songKey, levelIdx = 0) {
   particles.length = 0; ripples.length = 0; popups.length = 0; game.lastTickTime = 0;
   layoutSongKeys(game.song.notes);
   game.running = true; game.paused = false;
-  ui.setMode('song'); ui.refreshHUD(); ui.hideOverlay(); ui.enterPlayUI();
-  ui.showToast('🎵 跟着白色高亮圈弹，弹对自动跳到下一个音', '#5DCAA5');
+  ui.setMode('song'); ui.setPreview(false); ui.refreshHUD(); ui.hideOverlay(); ui.enterPlayUI();
+  ui.showToast('🎵 跟着白色高亮圈弹，弹对自动跳到下一个音（想先听节奏可点上方"预演示范"）', '#5DCAA5');
   const first = game.song.notes[0]; if (first) sfxGuide(first.midi); // 进场先把第一个音播给你听
 }
 
@@ -281,6 +305,7 @@ export function initGame() {
   on('beat', (ms, strong) => onBeat(ms, strong));
   on('start', i => startGame(i));
   on('startSong', (key, idx) => startSong(key, idx));
+  on('previewToggle', togglePreview);
   on('pauseToggle', pauseToggle);
   on('gameOver', gameOver);
 }

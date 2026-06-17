@@ -15,6 +15,13 @@ export function setMode(mode) {
   $('goalLabel').innerHTML = mode === 'song'
     ? '还剩 <b id="goalRemain">0</b> 个音'
     : '距离过关还差 <b id="goalRemain">0</b> 分';
+  const pv = $('previewBtn'); if (pv) pv.classList.toggle('hidden', mode !== 'song'); // 预演开关只在歌曲模式露出
+}
+
+// 预演开关的视觉状态（开=高亮 + 文案变"停止"）。
+export function setPreview(on) {
+  const b = $('previewBtn'); if (!b) return;
+  b.classList.toggle('on', on); b.textContent = on ? '⏹ 停止预演' : '🎧 预演示范';
 }
 
 export function refreshHUD() {
@@ -71,7 +78,7 @@ export function buildLevelGrid(container) {
 // ---------- 进入/退出游戏时的 HUD 切换 ----------
 export function hideOverlay() { primaryAction = null; $('overlay').classList.add('hidden'); }
 export function enterPlayUI() { $('pauseBtn').classList.remove('hidden'); $('goalWrap').classList.remove('hidden'); }
-export function exitPlayUI() { $('pauseBtn').classList.add('hidden'); $('goalWrap').classList.add('hidden'); }
+export function exitPlayUI() { $('pauseBtn').classList.add('hidden'); $('goalWrap').classList.add('hidden'); $('previewBtn').classList.add('hidden'); }
 export function setPaused(p) { $('pauseBtn').textContent = p ? '继续' : '暂停'; }
 
 // ---------- 结算页 ----------
@@ -145,6 +152,7 @@ export function showStart() {
 export function bindButtons() {
   startHTML = $('overlay').innerHTML; // 首次装配时抓取原始开始界面
   $('pauseBtn').onclick = () => emit('pauseToggle');
+  $('previewBtn').onclick = () => emit('previewToggle');
   $('bgmBtn').onclick = () => { const on = !$('bgmBtn').classList.contains('on'); $('bgmBtn').classList.toggle('on', on); setBgm(on); };
   $('sfxBtn').onclick = () => { const on = !$('sfxBtn').classList.contains('on'); $('sfxBtn').classList.toggle('on', on); setSfx(on); };
   bindStart();
