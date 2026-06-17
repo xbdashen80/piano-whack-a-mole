@@ -5,6 +5,14 @@ import { midiName, FINGER_COLORS } from './levels.js';
 import { drawBear } from './bear.js';
 
 const GOLD_PAL = ['#FFD166', '#FFF1B8']; // 金鼠调色板
+// 时值→拍数（与 SONG_MODE 数据一致）：歌曲乐谱里音块的宽度按它算
+const DUR_BEATS = { eighth: 0.5, quarter: 1, 'dotted-quarter': 1.5, half: 2, 'dotted-half': 3, whole: 4 };
+// 圆角矩形路径（不依赖新版 canvas roundRect）
+function rr(x, y, w, h, r) {
+  r = Math.min(r, w / 2, h / 2); ctx.beginPath(); ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+}
 
 // 命中特效：爆粒子 + 扩散水波
 export function fx(cx, cy, pal, big) {
@@ -202,6 +210,45 @@ function drawSongTarget(note, now, isCurrent) {
   ctx.globalAlpha = 1; ctx.textBaseline = 'alphabetic';
 }
 
+// 歌曲模式·动态乐谱：上方一条横向"钢琴卷帘"——音块按音高排列(高音在上、低音在下)、按拍位从右往左滚，
+// 当前该弹的音停在"现在"竖线上高亮，已弹过的淡出、还没到的弱显示，并用连线画出旋律走向。
+// 目的：让零基础也能"看见"接下来弹什么、往哪走，提前预备、照着模仿，慢慢接近真实曲子。
+function drawScoreRibbon(now) {
+  const s = game.song; const notes = s.notes; if (!notes.length) return;
+  const top = 86, bottom = Math.max(top + 96, kb.keyTop - 165); // 上方留给乐谱的纵向区间
+  const playX = view.W * 0.26;                                   // "现在"竖线位置（当前音停在这）
+  const pxPerBeat = 48, pad = 24;
+  const midis = notes.map(n => n.midi); const lo = Math.min(...midis), hi = Math.max(...midis); const span = Math.max(1, hi - lo);
+  const yOf = m => bottom - pad - (m - lo) / span * (bottom - top - pad * 2);
+  const curBeat = (notes[s.ptr] || notes[notes.length - 1]).startBeat;
+  const xOf = b => playX + (b - curBeat) * pxPerBeat;
+
+  // 小节竖线（每 4 拍）——给乐谱的骨架感
+  for (let bar = Math.floor(curBeat / 4) * 4; xOf(bar) < view.W; bar += 4) {
+    const x = xOf(bar); if (x < 18) continue;
+    ctx.strokeStyle = 'rgba(255,255,255,0.07)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x, top); ctx.lineTo(x, bottom); ctx.stroke();
+  }
+  // "现在"竖线 + 标签
+  ctx.strokeStyle = 'rgba(157,229,181,0.85)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(playX, top - 4); ctx.lineTo(playX, bottom + 4); ctx.stroke();
+  ctx.fillStyle = 'rgba(157,229,181,0.95)'; ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'center'; ctx.fillText('▶ 现在', playX, top - 10);
+  // 旋律走向连线（看出上行/下行）
+  ctx.strokeStyle = 'rgba(255,255,255,0.16)'; ctx.lineWidth = 2; ctx.beginPath(); let started = false;
+  notes.forEach(n => { const x = xOf(n.startBeat) + 12, y = yOf(n.midi); if (x < -40 || x > view.W + 40) return; if (!started) { ctx.moveTo(x, y); started = true; } else ctx.lineTo(x, y); });
+  ctx.stroke();
+  // 音块：音名居中，按手指配色；已弹过淡出、当前脉冲白框、将来弱显示
+  notes.forEach((n, i) => {
+    const x = xOf(n.startBeat), w = Math.max(26, (DUR_BEATS[n.duration] || 1) * pxPerBeat - 8);
+    if (x + w < 8 || x > view.W - 4) return;
+    const y = yOf(n.midi) - 13, h = 26, played = i < s.ptr, current = i === s.ptr;
+    ctx.globalAlpha = played ? 0.22 : (current ? 1 : 0.82);
+    rr(x, y, w, h, 7); ctx.fillStyle = FINGER_COLORS[n.finger] || '#9DE5B5'; ctx.fill();
+    if (current) { ctx.globalAlpha = 0.5 + 0.4 * Math.abs(Math.sin(now / 180)); ctx.strokeStyle = '#fff'; ctx.lineWidth = 3; rr(x - 2, y - 2, w + 4, h + 4, 9); ctx.stroke(); }
+    ctx.globalAlpha = played ? 0.35 : 1; ctx.fillStyle = '#1a1a22'; ctx.font = 'bold 13px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(midiName(n.midi), x + w / 2, y + h / 2);
+  });
+  ctx.globalAlpha = 1; ctx.textBaseline = 'alphabetic';
+}
+
 // 歌曲模式主绘制：铺白键(本关音域) + 高亮当前/下一个该弹的键，复用粒子/连击作"弹对就爽"的反馈。
 export function drawSong(now) {
   ctx.fillStyle = 'rgba(10,10,20,0.3)'; ctx.fillRect(0, 0, view.W, view.H);
@@ -209,6 +256,7 @@ export function drawSong(now) {
   const sy = game.shake ? (Math.random() * 2 - 1) * game.shake : 0;
   ctx.save(); ctx.translate(sx, sy);
   const s = game.song; const cur = s ? s.notes[s.ptr] : null; const nxt = s ? s.notes[s.ptr + 1] : null;
+  if (s) drawScoreRibbon(now); // 上方动态乐谱（看旋律走向、提前预备）
   // 提示圈（先画"下一个"弱提示，再画"当前"压在上层）
   if (nxt) drawSongTarget(nxt, now, false);
   if (cur) drawSongTarget(cur, now, true);
