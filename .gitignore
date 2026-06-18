@@ -12,3 +12,7 @@ desktop.ini
 node_modules/
 dist/
 *.log
+
+# 源 MIDI：版权归原作者，仅本地个人练习用；只提交派生的音符数据(src/song-laputa.js)
+*.mid
+*.midi

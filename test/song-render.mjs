@@ -46,7 +46,7 @@ check(game.mode === 'song' && !!game.song, '已进入歌曲模式');
 
 try {
   drawSong(0); drawSong(123);                         // 开局：全是"将来"音块
-  [76, 74, 71].forEach(m => { clock += 400; emit('press', m, 0.8); }); // 弹对前 3 音 → 出现"已弹/当前"
+  game.song.notes.slice(0, 3).forEach(n => { clock += 400; emit('press', n.midi, 0.8); }); // 弹对前 3 音 → 出现"已弹/当前"
   drawSong(456); drawSong(789);
   check(game.song.ptr === 3, '弹对 3 个音后指针=3（已弹/当前/将来三态都会被绘制）');
   check(true, 'drawSong 多帧绘制全程未抛错');

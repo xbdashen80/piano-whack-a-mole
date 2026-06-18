@@ -216,8 +216,9 @@ function songAxis() {
   const curBeat = (s.notes[s.ptr] || s.notes[s.notes.length - 1]).startBeat;
   return { playX, pxPerBeat, curBeat, xOf: b => playX + (b - curBeat) * pxPerBeat };
 }
-// 白键音高 → 音级序号（C D E F G A B 各算一级），用于五线谱里音符落在哪条线/间。
-const PC_DIATONIC = { 0: 0, 2: 1, 4: 2, 5: 3, 7: 4, 9: 5, 11: 6 };
+// 音高 → 音级序号（C D E F G A B 各算一级），用于五线谱里音符落在哪条线/间。
+// 黑键(升号)归到下方白键的音级：C#→C, D#→D, F#→F, G#→G, A#→A（暂不画升号，至少落在正确线区）。
+const PC_DIATONIC = { 0: 0, 1: 0, 2: 1, 3: 1, 4: 2, 5: 3, 6: 3, 7: 4, 8: 4, 9: 5, 10: 5, 11: 6 };
 const diatonic = m => (Math.floor(m / 12) - 1) * 7 + (PC_DIATONIC[((m % 12) + 12) % 12] ?? 0);
 
 // 歌曲模式·动态五线谱（高音谱表）：音符头按真实音高落在线/间上、随拍位从右往左滚，当前音绿色高亮+脉冲，

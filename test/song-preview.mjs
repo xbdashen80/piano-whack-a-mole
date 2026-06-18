@@ -42,10 +42,14 @@ check(game.mode === 'song' && game.song.ptr === 0, '进入歌曲模式、指针=
 emit('previewToggle'); await flush();
 check(game.song.preview === true, '开启预演：preview=true');
 
-run(60, 50);                                   // 约 3 秒
+// 按实际曲长/演奏速度算帧数（dt 上限 50ms/帧）；首音可能是弱起，跑到越过第 3 个音再断言推进
+const beatMs = 60000 / (game.song.performBpm || 60);
+const lastBeat = Math.max(...game.song.notes.map(n => n.startBeat));
+run(Math.ceil((game.song.notes[2].startBeat + 1) * beatMs / 50) + 5, 50);
 check(game.song.ptr > 0, '预演中无任何输入，指针自动推进（' + game.song.ptr + '）');
 
-const r = run(900, 50);                          // 跑完整首(bpm50≈38s)并越过循环点
+const frames = Math.ceil((lastBeat + 4) * beatMs / 50) + 40;
+const r = run(frames, 50);
 check(r.maxPtr === N - 1, '预演走到过最后一个音（maxPtr=' + r.maxPtr + ' / 末位=' + (N - 1) + '）');
 check(r.reset === true, '整首放完后自动从头循环（观察到指针回退）');
 

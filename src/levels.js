@@ -1,4 +1,5 @@
 // ================= 纯数据 + 小工具 =================
+import { LAPUTA_BPM, LAPUTA_RIGHT_HAND } from './song-laputa.js'; // 《天空之城》主旋律(由源 MIDI 生成)
 // 白键 MIDI 音高（C4 起，一个多八度）
 export const WHITE = [60, 62, 64, 65, 67, 69, 71, 72, 74, 76, 77, 79];
 
@@ -99,53 +100,15 @@ export const LEVELS = [
 // 第一阶段只实现《天空之城》关卡 1（C 大调骨架, 全四分音符, 不判节奏, 只判音高顺序）。
 export const SONGS = {
   laputa: {
-    // bpm = 演奏速度（预演示范按它播，让你听到"最终效果"的节奏）；关卡里的 bpm 是慢练速度，二者不同
-    title: '天空之城', key: 'C', timeSignature: '4/4', bpm: 70,
+    // bpm = 演奏速度（预演按它播=最终效果）。主旋律数据由源 MIDI 经 tools/midi-to-song.mjs 生成 → src/song-laputa.js。
+    title: '天空之城', key: 'C', timeSignature: '4/4', bpm: LAPUTA_BPM,
     levels: [
       {
-        id: 1, name: '认骨架', bpm: 50,
-        rightHand: [
-          // 小节1 (startBeat 0-3)
-          { pitch: 'E5', midi: 76, finger: 3, duration: 'quarter', startBeat: 0 },
-          { pitch: 'D5', midi: 74, finger: 2, duration: 'quarter', startBeat: 1 },
-          { pitch: 'B4', midi: 71, finger: 1, duration: 'quarter', startBeat: 2 },
-          { pitch: 'A4', midi: 69, finger: 1, duration: 'quarter', startBeat: 3 },
-          // 小节2 (4-7)，第4拍休止
-          { pitch: 'B4', midi: 71, finger: 1, duration: 'quarter', startBeat: 4 },
-          { pitch: 'E5', midi: 76, finger: 3, duration: 'quarter', startBeat: 5 },
-          { pitch: 'E5', midi: 76, finger: 3, duration: 'quarter', startBeat: 6 },
-          // 小节3 (8-11)
-          { pitch: 'A5', midi: 81, finger: 5, duration: 'quarter', startBeat: 8 },
-          { pitch: 'G5', midi: 79, finger: 4, duration: 'quarter', startBeat: 9 },
-          { pitch: 'E5', midi: 76, finger: 2, duration: 'quarter', startBeat: 10 },
-          { pitch: 'D5', midi: 74, finger: 1, duration: 'quarter', startBeat: 11 },
-          // 小节4 (12-15)，第4拍休止
-          { pitch: 'E5', midi: 76, finger: 2, duration: 'quarter', startBeat: 12 },
-          { pitch: 'G5', midi: 79, finger: 4, duration: 'quarter', startBeat: 13 },
-          { pitch: 'G5', midi: 79, finger: 4, duration: 'quarter', startBeat: 14 },
-          // 小节5 (16-19)
-          { pitch: 'F5', midi: 77, finger: 3, duration: 'quarter', startBeat: 16 },
-          { pitch: 'E5', midi: 76, finger: 2, duration: 'quarter', startBeat: 17 },
-          { pitch: 'D5', midi: 74, finger: 1, duration: 'quarter', startBeat: 18 },
-          { pitch: 'C5', midi: 72, finger: 1, duration: 'quarter', startBeat: 19 },
-          // 小节6 (20-23)
-          { pitch: 'D5', midi: 74, finger: 1, duration: 'quarter', startBeat: 20 },
-          { pitch: 'E5', midi: 76, finger: 2, duration: 'quarter', startBeat: 21 },
-          { pitch: 'C5', midi: 72, finger: 1, duration: 'quarter', startBeat: 22 },
-          { pitch: 'B4', midi: 71, finger: 1, duration: 'quarter', startBeat: 23 },
-          // 小节7 (24-27)
-          { pitch: 'A4', midi: 69, finger: 1, duration: 'quarter', startBeat: 24 },
-          { pitch: 'B4', midi: 71, finger: 2, duration: 'quarter', startBeat: 25 },
-          { pitch: 'C5', midi: 72, finger: 3, duration: 'quarter', startBeat: 26 },
-          { pitch: 'E5', midi: 76, finger: 5, duration: 'quarter', startBeat: 27 },
-          // 小节8 (28-31)，第4拍休止
-          { pitch: 'D5', midi: 74, finger: 2, duration: 'quarter', startBeat: 28 },
-          { pitch: 'B4', midi: 71, finger: 1, duration: 'quarter', startBeat: 29 },
-          { pitch: 'A4', midi: 69, finger: 1, duration: 'quarter', startBeat: 30 }
-        ],
+        id: 1, name: '主旋律', bpm: 50,
+        rightHand: LAPUTA_RIGHT_HAND, // 单行主旋律，含 3 个黑键(F#4/G#4)，真钢琴可弹
         leftHand: []
       }
-      // 关卡 2(真实节奏)/4(左手根音)/7(配伴奏) 待补：先把关卡 1 整条链路跑通
+      // 关卡 2(左手根音)/3(配伴奏) 待补：先把主旋律整条链路跑通
     ]
   }
 };
